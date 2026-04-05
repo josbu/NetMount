@@ -1,4 +1,5 @@
 import { reupStats } from './stats'
+import { logger } from '../../services/LoggerService'
 
 function startUpdateCont() {
   const intervalId = setInterval(async () => {
@@ -6,7 +7,7 @@ function startUpdateCont() {
       await reupStats()
     } catch (error) {
       // 处理错误，例如记录日志或清理状态
-      console.error('Error occurred while updating stats:', error)
+      logger.error('Error occurred while updating stats', error as Error, 'Stats')
     }
   }, 700) // 每n毫秒调用一次
 

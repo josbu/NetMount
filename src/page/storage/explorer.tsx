@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useReducer, useState } from 'react'
+import { CSSProperties, useEffect, useState } from 'react'
 import {
   Badge,
   Button,
@@ -32,28 +32,20 @@ import {
   IconUpload,
 } from '@arco-design/web-react/icon'
 import { rcloneInfo } from '../../services/rclone'
+import { logger } from '../../services'
 import { useTranslation } from 'react-i18next'
-import {
-  copyDir,
-  copyFile,
-  delDir,
-  delFile,
-  filterHideStorage,
-  getFileList,
-  mkDir,
-  moveDir,
-  moveFile,
-  uploadFileRequest,
-} from '../../controller/storage/storage'
+import { filterHideStorage } from '../../services/storage/StorageManager'
+import { delDir, delFile, getFileList, mkDir, uploadFileRequest } from '../../services/storage/FileManager'
+import { copyDir, copyFile, moveDir, moveFile } from '../../services/storage/TransferService'
 import { FileInfo } from '../../type/rclone/rcloneInfo'
-import { formatSize, getURLSearchParam } from '../../utils/utils'
+import { formatSize, getURLSearchParam } from '../../utils'
+import { getParentPath } from '../../services'
 import { RequestOptions } from '@arco-design/web-react/es/Upload'
 import { NoData_module } from '../other/noData'
 import { clipListItem } from '../../type/page/storage/explorer'
-// import { searchStorageInfo } from '../../controller/storage/allList';
 const Row = Grid.Row
-const Col = Grid.Col //
-// const TabPane = Tabs.TabPane;
+const Col = Grid.Col
+
 const tipsStyle: CSSProperties = {
   textAlign: 'center',
   paddingTop: '6rem',
@@ -63,12 +55,10 @@ const tipsStyle: CSSProperties = {
 function ExplorerItem() {
   const { t } = useTranslation()
 
-  const [,] = useReducer(x => x + 1, 0) //刷新组件
   const [modal, contextHolder] = Modal.useModal()
   const [storageName, setStorageName] = useState<string>()
   const [path, setPath] = useState<string>()
   const [pathTemp, setPathTemp] = useState<string>('')
-  //const [selectedRowKeys, setSelectedRowKeys] = useState<Array<string | number>>([]);
 
   const [fileList, setFileInfo] = useState<Array<FileInfo>>()
 
@@ -121,15 +111,6 @@ function ExplorerItem() {
       sanitized = '/' + sanitized
     }
     return sanitized
-  }
-
-  // 获取父目录路径
-  const getParentPath = (inputPath: string): string => {
-    if (!inputPath || inputPath === '/') return '/'
-    const sanitized = sanitizePath(inputPath)
-    const parts = sanitized.split('/').filter(p => p)
-    parts.pop()
-    return parts.length === 0 ? '/' : '/' + parts.join('/')
   }
 
   // 创建一个自定义函数用于更新路径，确保路径始终符合规范
@@ -232,7 +213,8 @@ function ExplorerItem() {
   }
 
   function fileRename(filePath: string, isDir: boolean) {
-    console.log(getParentPath(filePath))
+    const parentPath = getParentPath(filePath)
+    logger.debug('File rename - parent path', 'Explorer', { filePath, parentPath })
 
     let nameTemp = filePath.split('/').pop()!
     modal.info!({
@@ -265,7 +247,7 @@ function ExplorerItem() {
   }
 
   const openFile = (path: string) => {
-    console.log(path)
+    logger.debug('Open file', 'Explorer', { path })
     Message.info({ content: t('mount_the_storage_to_download_files'), id: 'openfile' })
   }
 

@@ -1,7 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, Button, Message, Grid, ConfigProvider, Spin } from '@arco-design/web-react'
 import '@arco-themes/react-vhbs/css/arco.css'
-//import "@arco-design/web-react/dist/css/arco.css";
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -19,7 +18,7 @@ import {
 import { windowsHide, windowsMini } from './controller/window'
 import { hooks } from './services/hook'
 import { getLocale } from './controller/language/language'
-import { nmConfig } from './services/config'
+import { nmConfig } from './services/ConfigService'
 import { getLangCode } from './controller/language/localized'
 
 const { Item: MenuItem, SubMenu } = Menu
@@ -125,7 +124,6 @@ function mapRouters(routes: Routers[]): JSX.Element {
 }
 
 function App() {
-  //const [router, setRouter] = useState<Routers | null>();
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useTranslation()
@@ -249,7 +247,6 @@ function App() {
       }
     }
 
-    //setRouter(searchRoute(location.pathname, routers));
     const route = searchRoute(location.pathname, routers)
     if (route) {
       if (route.key) {
@@ -260,15 +257,6 @@ function App() {
     }
   }, [location])
 
-  /* 
-        <Layout style={{ height: '400px' }}>
-        <Header>Header</Header>
-        <Layout>
-          <Sider>Sider</Sider>
-          <Content>Content</Content>
-        </Layout>
-        <Footer>Footer</Footer>
-      </Layout> */
   return (
     <ConfigProvider locale={getLocale(localeStr)}>
       <Layout

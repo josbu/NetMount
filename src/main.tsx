@@ -8,6 +8,7 @@ import { init } from './controller/main'
 import ReactDOM from 'react-dom/client'
 import { Spin } from '@arco-design/web-react'
 import './controller/errorHandling'
+import { logger } from './services'
 
 function StartPage() {
   const { t } = useTranslation()
@@ -63,7 +64,7 @@ async function appStart(setStartStr: SetStartStrFn) {
     await init(setStartStr) //初始化功能
   } catch (e) {
     appStarting = false
-    console.error('App init failed:', e)
+    logger.error('App init failed', e instanceof Error ? e : new Error(String(e)))
     return
   }
 

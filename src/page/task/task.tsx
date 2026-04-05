@@ -1,5 +1,4 @@
-import { useReducer } from 'react'
-// import { DevTips_module } from '../other/devTips'
+import { useTaskStore } from '../../stores/useTaskStore'
 import {
   Button,
   Grid,
@@ -11,12 +10,13 @@ import {
   Typography,
 } from '@arco-design/web-react'
 import { useTranslation } from 'react-i18next'
-import { nmConfig, roConfig } from '../../services/config'
+import { nmConfig, roConfig } from '../../services/ConfigService'
+import { logger } from '../../services'
 import { useNavigate } from 'react-router-dom'
 import { delTask, taskScheduler } from '../../controller/task/task'
 import { NoData_module } from '../other/noData'
 import { IconQuestionCircle } from '@arco-design/web-react/icon'
-import { openUrlInBrowser } from '../../utils/utils'
+import { openUrlInBrowser } from '../../utils'
 import { showLog } from '../other/modal'
 
 const Row = Grid.Row
@@ -25,7 +25,7 @@ const Col = Grid.Col
 function Task_page() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [, forceUpdate] = useReducer(x => x + 1, 0) //刷新组件
+  const { increment: incrementTask } = useTaskStore()
   const [modal, contextHolder] = Modal.useModal()
 
   const columns: TableColumnProps[] = [
@@ -57,7 +57,7 @@ function Task_page() {
       width: '14rem',
     },
   ]
-  console.log(nmConfig.task)
+  logger.debug('Task config loaded', 'Task', { taskConfig: nmConfig.task })
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
@@ -75,7 +75,7 @@ function Task_page() {
             </Button>
             <Button
               onClick={() => {
-                forceUpdate()
+                incrementTask()
               }}
             >
               {t('refresh')}
@@ -123,7 +123,7 @@ function Task_page() {
                           taskScheduler.cancelTask(taskItem.name)
                           taskItem.enable = false
                           setTimeout(() => {
-                            forceUpdate()
+                            incrementTask()
                           }, 200)
                         }}
                         status="danger"
@@ -135,7 +135,7 @@ function Task_page() {
                         onClick={() => {
                           taskScheduler.executeTask(taskItem)
                           setTimeout(() => {
-                            forceUpdate()
+                            incrementTask()
                           }, 200)
                         }}
                       >
@@ -147,7 +147,7 @@ function Task_page() {
                       <Button
                         onClick={() => {
                           delTask(taskItem.name)
-                          forceUpdate()
+                          incrementTask()
                         }}
                         status="danger"
                       >
@@ -165,7 +165,7 @@ function Task_page() {
                           taskItem.enable = true
                           taskScheduler.addTask(taskItem)
                           setTimeout(() => {
-                            forceUpdate()
+                            incrementTask()
                           }, 200)
                         }}
                         type="primary"

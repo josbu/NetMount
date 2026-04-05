@@ -8,11 +8,8 @@ function normalizeStorageId(raw: string): string {
     .toLowerCase()
 }
 
-// 结构A：对象映射 { driverName: {config, common, additional} }
-// 结构B：数组 [ {name, config, common, additional} ]
-
 interface DriverInfo {
-  name?: string // 数组结构中的驱动名
+  name?: string
   config?: {
     name?: string
   }
@@ -29,7 +26,6 @@ interface DriverOption {
   options?: string
 }
 
-// 检测驱动列表数据结构类型
 function detectDriverListStructure(data: unknown): 'object-map' | 'array' | 'unknown' {
   if (!data) return 'unknown'
 
@@ -38,7 +34,6 @@ function detectDriverListStructure(data: unknown): 'object-map' | 'array' | 'unk
   }
 
   if (typeof data === 'object' && Object.keys(data).length > 0) {
-    // 检查第一个值是否有 config/common/additional 字段
     const record = data as Record<string, unknown>
     const firstKey = Object.keys(record)[0]
     const firstValue = record[firstKey!] as Record<string, unknown> | undefined
@@ -50,7 +45,6 @@ function detectDriverListStructure(data: unknown): 'object-map' | 'array' | 'unk
   return 'unknown'
 }
 
-// 将数组结构转换为对象映射结构
 function normalizeDriverList(data: unknown): Record<string, DriverInfo> {
   const structure = detectDriverListStructure(data)
 
@@ -71,13 +65,11 @@ function normalizeDriverList(data: unknown): Record<string, DriverInfo> {
   return {}
 }
 
-// 安全获取驱动配置
 function safeGetDriverConfig(provider: DriverInfo, key: string): { name?: string } {
   const defaultConfig = { name: key }
 
   if (!provider) return defaultConfig
 
-  // 容错：config 可能缺失
   if (!provider.config) {
     console.warn(`Driver ${key} missing config field, using fallback`)
     return { name: key }
@@ -88,7 +80,6 @@ function safeGetDriverConfig(provider: DriverInfo, key: string): { name?: string
   }
 }
 
-// 安全获取驱动参数列表
 function safeGetDriverOptions(
   provider: DriverInfo,
   field: 'common' | 'additional'
@@ -119,11 +110,9 @@ async function updateOpenlistStorageInfoList() {
       return []
     }
 
-    // 归一化驱动列表（处理双结构）
     const openlistProviders = normalizeDriverList(response.data)
     const openlistStorageInfoList: StorageInfoType[] = []
 
-    // 可选：回退方案 - 如果归一化失败，尝试使用 driver/names + driver/info
     if (Object.keys(openlistProviders).length === 0) {
       console.log('Driver list normalization failed, trying fallback approach...')
       return await updateOpenlistStorageInfoListFallback()
@@ -133,7 +122,6 @@ async function updateOpenlistStorageInfoList() {
       try {
         const provider = openlistProviders[key]
 
-        // 容错：跳过无效的驱动数据
         if (!provider || typeof provider !== 'object') {
           console.warn(`Skipping invalid driver data for key: ${key}`)
           continue
@@ -150,7 +138,6 @@ async function updateOpenlistStorageInfoList() {
           const storageParams: StorageParamItemType[] = []
 
           for (const option of options) {
-            // 容错：跳过无效的选项
             if (!option || typeof option !== 'object') {
               console.warn(`Skipping invalid option in driver ${key}`)
               continue
@@ -168,7 +155,6 @@ async function updateOpenlistStorageInfoList() {
               mark: [],
             }
 
-            // 类型(基础)
             let type: 'boolean' | 'number' | 'string'
             switch (option.type) {
               case 'bool':
@@ -182,11 +168,8 @@ async function updateOpenlistStorageInfoList() {
             }
             storageParam.type = type
 
-            // 默认值
             let defaultValue: string | number | boolean
             if (type === 'boolean') {
-              // 注意：API 返回的可能是字符串 "true"/"false"，不能直接用 Boolean()
-              // Boolean("false") 会返回 true（非空字符串为 truthy）
               const rawDefault = option.default
               if (typeof rawDefault === 'boolean') {
                 defaultValue = rawDefault
@@ -202,7 +185,6 @@ async function updateOpenlistStorageInfoList() {
             }
             storageParam.default = defaultValue
 
-            // 选项
             if (option.type === 'select' && option.options) {
               try {
                 storageParam.select = option.options.split(',').map((item: string) => {
@@ -218,7 +200,6 @@ async function updateOpenlistStorageInfoList() {
               }
             }
 
-            // 为隐藏无用参数
             if (
               [
                 'mount_path',
@@ -242,17 +223,14 @@ async function updateOpenlistStorageInfoList() {
               storageParam.hide = true
             }
 
-            // 设置webdav代理
             if (option.name === 'webdav_policy') {
-              storageParam.default = 'native_proxy' // 本机代理
+              storageParam.default = 'native_proxy'
             }
 
-            // 设置不缓存
             if (option.name === 'cache_expiration') {
-              storageParam.default = 0 // 不缓存 (数字类型)
+              storageParam.default = 0
             }
 
-            // 设置容量使用显示
             if (option.name === 'disable_disk_usage') {
               storageParam.default = false
             }
@@ -280,7 +258,6 @@ async function updateOpenlistStorageInfoList() {
           },
         })
       } catch (driverError) {
-        // 单个驱动异常不导致整个列表失败
         console.error(`Error processing driver ${key}:`, driverError)
         continue
       }
@@ -290,17 +267,14 @@ async function updateOpenlistStorageInfoList() {
     return openlistStorageInfoList
   } catch (error) {
     console.error('Failed to update OpenList storage info list:', error)
-    // 出错时返回空数组而不是抛出异常，避免UI崩溃
     return []
   }
 }
 
-// 回退方案：使用 driver/names + driver/info 拼装
 async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[]> {
   try {
     console.log('Using fallback: /api/admin/driver/names + /api/admin/driver/info')
 
-    // 获取驱动名称列表
     const namesResponse = await openlist_api_get('/api/admin/driver/names')
     if (!namesResponse.data || !Array.isArray(namesResponse.data)) {
       console.error('Failed to get driver names:', namesResponse)
@@ -309,7 +283,6 @@ async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[
 
     const openlistStorageInfoList: StorageInfoType[] = []
 
-    // 逐个获取驱动详情
     for (const driverName of namesResponse.data) {
       try {
         const infoResponse = await openlist_api_get('/api/admin/driver/info', {
@@ -320,13 +293,11 @@ async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[
           continue
         }
 
-        // 将单驱动信息转换为兼容格式
         const provider = infoResponse.data
         const config = safeGetDriverConfig(provider, driverName)
         const commonOptions = safeGetDriverOptions(provider, 'common')
         const additionalOptions = safeGetDriverOptions(provider, 'additional')
 
-        // 复用参数解析逻辑（简化版）
         const parseOptions = (
           options: DriverOption[],
           prefix: string = ''
@@ -335,10 +306,8 @@ async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[
             const type: 'boolean' | 'number' | 'string' =
               option.type === 'bool' ? 'boolean' : option.type === 'number' ? 'number' : 'string'
 
-            // 解析默认值
             let defaultValue: string | number | boolean
             if (type === 'boolean') {
-              // 注意：API 返回的可能是字符串 "true"/"false"，不能直接用 Boolean()
               const rawDefault = option.default
               if (typeof rawDefault === 'boolean') {
                 defaultValue = rawDefault

@@ -20,24 +20,10 @@ async function updateRcloneStorageInfoList() {
 
   const rcloneStorageInfoList: StorageInfoType[] = []
 
-  //let typeList: Array<string> = []
-
   for (const provider of providers) {
     const storageParams: StorageParamItemType[] = []
 
     for (const option of provider.Options) {
-      //console.log(option.Name);
-
-      //console.log(option.Type);
-
-      /*             if(option.DefaultStr !== option.ValueStr){//DefaultStr和ValueStr区别是，前者DefaultStr包含‘<nil>’字符串
-                            console.log(option.DefaultStr,option.ValueStr);
-                        } */
-      // all type: ['string', 'bool', 'CommaSepList', 'Encoding', 'SizeSuffix', 'int', 'Duration', 'SpaceSepList', 'Time', 'Tristate', 'Bits']
-      /*if (!typeList.includes(option.Type)) {
-                            typeList.push(option.Type)
-                        } */
-
       const storageParam: StorageParamItemType = {
         label: option.Name,
         name: option.Name,
@@ -50,7 +36,6 @@ async function updateRcloneStorageInfoList() {
         mark: [],
       }
 
-      //类型(基础)
       let type: 'boolean' | 'number' | 'string'
 
       switch (option.Type) {
@@ -66,19 +51,17 @@ async function updateRcloneStorageInfoList() {
 
       storageParam.type = type
 
-      //默认值
       let defaultValue: string | number | boolean
       if (type === 'boolean') {
         defaultValue = option.Default
       } else if (type === 'number') {
         defaultValue = option.Default
       } else {
-        defaultValue = option.ValueStr // option.DefaultStr
+        defaultValue = option.ValueStr
       }
 
       storageParam.default = defaultValue
 
-      //扩展类型
       if (type === 'string' && option.Type !== 'string') {
         const validExTypes = [
           'SpaceSepList',
@@ -95,13 +78,10 @@ async function updateRcloneStorageInfoList() {
         }
       }
 
-      //特殊标记（实现选择本地数据）
       if (type === 'string' && option.Name.includes('remote')) {
-        //本地存储数据
         storageParam.mark?.push('StorageAndPathInputer')
       }
 
-      //过滤器
       const generateFilter = (name: string, list: string) => {
         const filters: FilterType[] = []
         const Providers = list.split('!').join('').split(',') as Array<string>
@@ -112,10 +92,7 @@ async function updateRcloneStorageInfoList() {
             value: Provider,
             state: filterState,
           })
-          //console.log(filterState ? Provider : Provider.substring(1));
         }
-        //console.log(filters);
-
         return filters
       }
 
@@ -123,11 +100,6 @@ async function updateRcloneStorageInfoList() {
         storageParam.filters = generateFilter('provider', option.Provider)
       }
 
-      /* if(option.ShortOpt){//短选项
-                console.log(option.ShortOpt,option);
-            } */
-
-      //选项
       if (option.Examples && option.Examples.length > 0) {
         storageParam.select = option.Examples.map((item: { Value: string; Help: string }) => {
           const select: ParamItemOptionType = {
@@ -142,16 +114,15 @@ async function updateRcloneStorageInfoList() {
 
           return select
         })
-        //console.log(storageParam);
       }
 
       storageParams.push(storageParam)
     }
 
     rcloneStorageInfoList.push({
-      label: 'storage.' + normalizeStorageId(provider.Prefix), //provider.Name
+      label: 'storage.' + normalizeStorageId(provider.Prefix),
       type: provider.Prefix,
-      description: 'description.' + normalizeStorageId(provider.Prefix), //provider.Description
+      description: 'description.' + normalizeStorageId(provider.Prefix),
       framework: 'rclone',
       defaultParams: {
         name: provider.Name + '_new',

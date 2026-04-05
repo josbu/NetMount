@@ -1,7 +1,8 @@
-import { compareVersions } from '../../utils/utils'
+import { compareVersions } from '../../utils'
 import { ResItem } from '../../type/controller/update'
-import { nmConfig, osInfo } from '../../services/config'
+import { nmConfig, osInfo } from '../../services/ConfigService'
 import { getVersion } from '@tauri-apps/api/app'
+import { logger } from '../../services/LoggerService'
 
 async function checkUpdate(updateCall: (resList: ResItem, localVersions: string) => void) {
   const localVersions = await getVersion()
@@ -17,7 +18,7 @@ async function checkUpdate(updateCall: (resList: ResItem, localVersions: string)
       updateCall(resList, localVersions)
     }
   } catch {
-    console.error('checkUpdate error')
+    logger.error('checkUpdate error', undefined, 'Update')
   }
 }
 

@@ -1,5 +1,6 @@
-import { nmConfig } from '../../services/config'
+import { nmConfig } from '../../services/ConfigService'
 import { Notice } from '../../type/controller/update'
+import { logger } from '../../services/LoggerService'
 
 async function checkNotice() {
   try {
@@ -15,7 +16,7 @@ async function checkNotice() {
       }
     }
   } catch (e) {
-    console.log(e)
+    logger.error('Failed to check notice', e as Error, 'Notice')
   }
 }
 

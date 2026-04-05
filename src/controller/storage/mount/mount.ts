@@ -1,32 +1,48 @@
 import { invoke } from '@tauri-apps/api/core'
-import { nmConfig, saveNmConfig } from '../../../services/config'
+import { nmConfig, saveNmConfig } from '../../../services/ConfigService'
 import { hooks } from '../../../services/hook'
 import { rcloneInfo } from '../../../services/rclone'
 import { MountListItem } from '../../../type/config'
 import { rclone_api_post } from '../../../utils/rclone/request'
-import { fs_exist_dir, fs_make_dir } from '../../../utils/utils'
-import { convertStoragePath } from '../storage'
+import { fs_exist_dir, fs_make_dir } from '../../../utils'
+import { convertStoragePath } from '../../../services/storage/StorageManager'
 import {
   MountOptions,
   VfsOptions,
-  RcloneMountPoint,
 } from '../../../type/rclone/storage/mount/parameters'
+import { isMountListResponse } from '../../../type/rclone/api'
+import { logger } from '../../../services/LoggerService'
+import { useMountStore } from '../../../stores/mountStore'
+import type { MountList } from '../../../type/rclone/rcloneInfo'
 
-//列举存储
 async function reupMount(noRefreshUI?: boolean) {
   const response = await rclone_api_post('/mount/listmounts')
-  const mountPoints: RcloneMountPoint[] = response?.mountPoints || []
+  
+  if (!response || !isMountListResponse(response)) {
+    logger.warn('Invalid mount list response format', 'Mount', { response })
+    rcloneInfo.mountList = []
+    useMountStore.getState().setMountList([])
+    !noRefreshUI && hooks.upMount()
+    return
+  }
+  
+  const mountPoints = response.mountPoints
 
   rcloneInfo.mountList = []
+  const newMountList: MountList[] = []
 
-  mountPoints.forEach((item: RcloneMountPoint) => {
-    const name = item.Fs
-    rcloneInfo.mountList.push({
-      storageName: name, //name.substring(0, name.length - 1)
-      mountPath: item.MountPoint,
-      mountedTime: new Date(item.MountedOn),
-    })
+  mountPoints.forEach((item) => {
+    const name = item.fs
+    const mountItem: MountList = {
+      storageName: name,
+      mountPath: item.mountPoint,
+      mountedTime: new Date(item.mountedOn),
+    }
+    rcloneInfo.mountList.push(mountItem)
+    newMountList.push(mountItem)
   })
+  
+  useMountStore.getState().setMountList(newMountList)
   !noRefreshUI && hooks.upMount()
 }
 
@@ -133,7 +149,7 @@ async function unmountStorage(mountPath: string) {
 }
 
 async function getAvailableDriveLetter(): Promise<string> {
-  return await invoke('get_available_drive_letter') //Z:
+  return await invoke('get_available_drive_letter')
 }
 
 export {

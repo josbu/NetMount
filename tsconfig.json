@@ -34,8 +34,11 @@
       "@type/*": ["./src/type/*"],
       "@controller/*": ["./src/controller/*"],
       "@page/*": ["./src/page/*"]
-    }
+    },
+    
+    /* 测试类型支持 */
+    "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src"],
+  "include": ["src", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

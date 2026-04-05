@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
-import { sleep } from './utils'
+import { sleep } from './index'
+import { logger } from '../services/LoggerService'
 
 type WaitReadyOptions = {
   name: string
@@ -58,7 +59,7 @@ async function waitForReady(check: () => Promise<boolean>, opts: WaitReadyOption
 
     if (elapsed - lastLogAt >= logEveryMs) {
       lastLogAt = elapsed
-      console.log(`Waiting for ${opts.name} to start... (${Math.ceil(elapsed / 100) / 10}s)`)
+      logger.info(`Waiting for ${opts.name} to start... (${Math.ceil(elapsed / 100) / 10}s)`, 'Sidecar')
     }
 
     await sleep(intervalMs)

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { nmConfig } from '../../services/config'
+import { nmConfig } from '../../services/ConfigService'
 
 // 设置颜色模式
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

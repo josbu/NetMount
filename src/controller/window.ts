@@ -1,4 +1,4 @@
-import { saveNmConfig } from '../services/config'
+import { saveNmConfig } from '../services/ConfigService'
 import { webviewWindow } from '@tauri-apps/api'
 
 export const window = webviewWindow.getCurrentWebviewWindow()
@@ -10,7 +10,7 @@ function listenWindow() {
   })
 
   //禁止右键
-  if (process.env.NODE_ENV != 'development') {
+  if (import.meta.env.DEV !== true) {
     // 阻止F5或Ctrl+R（Windows/Linux）和Command+R（Mac）刷新页面
     document.addEventListener('keydown', function (event) {
       if (

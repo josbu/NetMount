@@ -11,13 +11,10 @@ import {
   Typography,
   Alert,
 } from '@arco-design/web-react'
-import { formatETA, formatSize } from '../../utils/utils'
-// import { Area } from '@ant-design/charts'
+import { formatETA, formatSize } from '../../utils'
 import { NoData_module } from '../other/noData'
 import { useTranslation } from 'react-i18next'
 import { openlistInfo } from '../../services/openlist'
-// const Row = Grid.Row;
-// const Col = Grid.Col;
 
 function Transmit_page() {
   const { t } = useTranslation()

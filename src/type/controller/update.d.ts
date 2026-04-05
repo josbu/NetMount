@@ -1,7 +1,3 @@
-export interface ResList {
-  [key: string]: ResItem
-}
-
 export interface ResItem {
   id: string
   name: string

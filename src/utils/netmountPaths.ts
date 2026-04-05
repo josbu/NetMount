@@ -1,12 +1,12 @@
-import { osInfo, roConfig } from '../services/config'
-import { formatPath } from './utils'
+import { osInfo, runtimeEnv } from '../services/ConfigService'
+import { formatPath } from './format'
 
 function netmountDataDir(): string {
-  return formatPath(roConfig.env.path.homeDir + '/.netmount/', osInfo.platform === 'windows')
+  return formatPath(runtimeEnv.path.homeDir + '/.netmount/', osInfo.platform === 'windows')
 }
 
 function defaultCacheDir(): string {
-  return formatPath(roConfig.env.path.homeDir + '/.cache/netmount', osInfo.platform === 'windows')
+  return formatPath(runtimeEnv.path.homeDir + '/.cache/netmount', osInfo.platform === 'windows')
 }
 
 function rcloneConfigFile(): string {

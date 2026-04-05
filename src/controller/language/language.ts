@@ -13,37 +13,25 @@ import viVN from '@arco-design/web-react/es/locale/vi-VN'
 import zhTW from '@arco-design/web-react/es/locale/zh-TW' // 引入台灣繁體中文語言包
 import { Locale } from '@arco-design/web-react/es/locale/interface'
 
+// Type-safe locale mapping using Partial to accommodate locale variations
+const localeMap: Record<string, Partial<Locale>> = {
+  'zh-cn': zhCN,
+  'en-us': enUS,
+  'ja-jp': jaJP,
+  'ko-kr': koKR,
+  'id-id': idID,
+  'th-th': thTH,
+  'zh-hk': zhHK,
+  'fr-fr': frFR,
+  'es-es': esES,
+  'de-de': deDE,
+  'it-it': itIT,
+  'vi-vn': viVN,
+  'zh-tw': zhTW,
+}
+
 function getLocale(locale: string): Locale {
-  switch (locale) {
-    case 'zh-cn':
-      return zhCN
-    case 'en-us':
-      return enUS
-    case 'ja-jp':
-      return jaJP
-    case 'ko-kr':
-      return koKR as unknown as Locale
-    case 'id-id':
-      return idID as unknown as Locale
-    case 'th-th':
-      return thTH as unknown as Locale
-    case 'zh-hk':
-      return zhHK
-    case 'fr-fr':
-      return frFR as unknown as Locale
-    case 'es-es':
-      return esES as unknown as Locale
-    case 'de-de':
-      return deDE as unknown as Locale
-    case 'it-it':
-      return itIT as unknown as Locale
-    case 'vi-vn':
-      return viVN as unknown as Locale
-    case 'zh-tw':
-      return zhTW // 新增台灣繁體中文選項
-    default:
-      return zhCN
-  }
+  return (localeMap[locale.toLowerCase()] ?? zhCN) as Locale
 }
 
 export { getLocale }

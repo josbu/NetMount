@@ -16,12 +16,12 @@ import { FilterType, StorageParamItemType } from '../../type/controller/storage/
 import { ParametersType } from '../../type/defaults'
 import { t } from 'i18next'
 import { IconQuestionCircle } from '@arco-design/web-react/icon'
-import { getProperties } from '../../utils/utils'
+import { getProperties } from '../../utils'
 import {
   convertStoragePath,
   filterHideStorage,
   formatPathRclone,
-} from '../../controller/storage/storage'
+} from '../../services/storage/StorageManager'
 import { openlistInfo } from '../../services/openlist'
 const Row = Grid.Row
 const Col = Grid.Col

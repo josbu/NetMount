@@ -18,7 +18,7 @@ import {
   getURLSearchParam,
   getWinFspInstallState,
   showPathInExplorer,
-} from '../../utils/utils'
+} from '../../utils'
 import {
   defaultMountConfig,
   defaultVfsConfig,
@@ -32,10 +32,10 @@ import {
   getMountStorage,
   mountStorage,
 } from '../../controller/storage/mount/mount'
-import { osInfo } from '../../services/config'
+import { osInfo } from '../../services/ConfigService'
 import { homeDir } from '@tauri-apps/api/path'
 import { InputForm_module, paramsType2FormItems } from '../other/InputForm'
-import { filterHideStorage } from '../../controller/storage/storage'
+import { filterHideStorage } from '../../services/storage/StorageManager'
 import { MountOptions, VfsOptions } from '../../type/rclone/storage/mount/parameters'
 import { searchStorageInfo } from '../../controller/storage/allList'
 import { ParametersType } from '../../type/defaults'
@@ -49,8 +49,6 @@ export default function AddMount_page() {
   const [showAllOptions, setShowAllOptions] = useState(false)
   const [mountPath, setMountPath] = useState<string>('')
   const [autoMount, setAutoMount] = useState(true)
-  //const [autoMountPath, setAutoMountPath] = useState(true)//自动分配盘符
-  //const [notification, contextHolder] = Notification.useNotification();
   const [parameters, setParameters] = useState<{ vfsOpt: VfsOptions; mountOpt: MountOptions }>({
     mountOpt: defaultMountConfig,
     vfsOpt: defaultVfsConfig,
@@ -390,9 +388,8 @@ export default function AddMount_page() {
             onChange={data => {
               setParameters({ ...parameters, mountOpt: { ...parameters.mountOpt, ...data } })
             }}
-            overwriteValues={parameters.mountOpt as unknown as ParametersType}
+            overwriteValues={parameters.mountOpt satisfies ParametersType}
             setFormHook={form => {
-              //form.setFieldsValue(parameters.mountOpt)
               setMountOptFormHook(form)
             }}
           />
@@ -404,9 +401,8 @@ export default function AddMount_page() {
             onChange={data => {
               setParameters({ ...parameters, vfsOpt: { ...parameters.vfsOpt, ...data } })
             }}
-            overwriteValues={parameters.vfsOpt as unknown as ParametersType}
+            overwriteValues={parameters.vfsOpt satisfies ParametersType}
             setFormHook={form => {
-              //form.setFieldsValue(parameters.vfsOpt);
               setVfsOptFormHook(form)
             }}
           />

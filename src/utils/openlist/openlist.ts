@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
 import { openlistDataDir } from './paths'
 import { openlistInfo } from '../../services/openlist'
-import { createStorage } from '../../controller/storage/create'
-import { nmConfig } from '../../services/config'
+import { createStorage } from '../../services/storage/StorageCreationService'
+import { nmConfig } from '../../services/ConfigService'
 import { rclone_api_post } from '../rclone/request'
-import { mergeObjects } from '../utils'
+import { mergeObjects } from '../index'
 import { openlist_api_get, openlist_api_post } from './request'
 import { runSidecarOnce } from '../sidecar'
+import { logger } from '../../services/LoggerService'
 
 type OpenlistLoginResponse = {
   code?: number
@@ -123,7 +124,7 @@ async function setOpenlistPass(pass: string) {
     })
     return
   } catch (e) {
-    console.warn('OpenList CLI password reset failed:', e)
+    logger.warn('OpenList CLI password reset failed', 'OpenlistUtils', { error: e })
     throw new Error('OpenList CLI password reset failed')
   }
 }
@@ -165,10 +166,11 @@ const WEB_DAV_MANAGE = 512
 async function ensureOpenlistWebdavPermissions(username: string): Promise<void> {
   try {
     const res = await openlist_api_get('/api/admin/user/list')
-    const list = (res.data?.content as OpenlistUser[]) || []
+    const resData = res.data as { content?: OpenlistUser[] } | undefined
+    const list = resData?.content || []
     const user = list.find(u => u?.username === username)
     if (!user) {
-      console.warn('ensureOpenlistWebdavPermissions: user not found:', username)
+      logger.warn('ensureOpenlistWebdavPermissions: user not found', 'OpenlistUtils', { username })
       return
     }
 
@@ -191,18 +193,13 @@ async function ensureOpenlistWebdavPermissions(username: string): Promise<void> 
 
     const updateRes = await openlist_api_post('/api/admin/user/update', updateBody)
     if (updateRes.code !== 200) {
-      console.warn('ensureOpenlistWebdavPermissions: update failed:', updateRes)
+      logger.warn('ensureOpenlistWebdavPermissions: update failed', 'OpenlistUtils', { updateRes })
       return
     }
 
-    console.log(
-      'OpenList WebDAV permissions enabled for user:',
-      username,
-      'permission:',
-      nextPermission
-    )
+    logger.info('OpenList WebDAV permissions enabled', 'OpenlistUtils', { username, permission: nextPermission })
   } catch (e) {
-    console.warn('ensureOpenlistWebdavPermissions: failed:', e)
+    logger.warn('ensureOpenlistWebdavPermissions: failed', 'OpenlistUtils', { error: e })
   }
 }
 
@@ -229,14 +226,14 @@ async function modifyOpenlistConfig(
       unknown
     >
   } catch (e) {
-    console.log('配置文件不存在或损坏，使用空配置:', e)
+    logger.info('OpenList config file not found or corrupted, using empty config', 'OpenlistUtils', { error: e })
   }
 
-  // 合并配置
-  const newOpenlistConfig = mergeObjects(
-    { ...(oldOpenlistConfig as Record<string, unknown>) } as unknown as OpenlistConfig,
-    rewriteData as OpenlistConfigPartial
-  ) as unknown as OpenlistConfig
+  // 合并配置 - 使用类型安全的合并方式
+  const newOpenlistConfig: OpenlistConfig = mergeObjects(
+    oldOpenlistConfig as OpenlistConfig,
+    rewriteData
+  )
 
   // 将绝对路径转换为相对路径（基于数据目录）
   const toRelativePath = (absolutePath: string) => {
@@ -289,11 +286,12 @@ async function addOpenlistInRclone() {
   const password = nmConfig.framework.openlist.password
   const storageName = openlistInfo.markInRclone
 
-  console.log('=== OpenList WebDAV Configuration ===')
-  console.log('Storage name:', storageName)
-  console.log('WebDAV URL:', webdavUrl)
-  console.log('WebDAV Username:', username)
-  console.log('Note: WebDAV password is the same as Web UI login password')
+  logger.info('OpenList WebDAV Configuration', 'OpenlistUtils', {
+    storageName,
+    webdavUrl,
+    username
+  })
+  logger.info('Note: WebDAV password is the same as Web UI login password', 'OpenlistUtils')
 
   // 可选：探测 WebDAV 端点以提供诊断信息
   try {
@@ -303,35 +301,33 @@ async function addOpenlistInRclone() {
         Authorization: 'Basic ' + btoa(username + ':' + password),
       },
     })
-    console.log('WebDAV probe HTTP status:', probeRes.status)
+    logger.info('WebDAV probe HTTP status', 'OpenlistUtils', { status: probeRes.status })
     if (probeRes.status === 401) {
-      console.warn(
-        'WebDAV returned 401 - Please check if user has WebDAV Read/Management permissions enabled'
-      )
+      logger.warn('WebDAV returned 401 - Please check if user has WebDAV Read/Management permissions enabled', 'OpenlistUtils')
     } else if (probeRes.status === 403) {
-      console.warn('WebDAV returned 403 - Please check if user has necessary file permissions')
+      logger.warn('WebDAV returned 403 - Please check if user has necessary file permissions', 'OpenlistUtils')
     } else if (probeRes.ok || probeRes.status === 207) {
-      console.log('WebDAV endpoint appears to be accessible')
+      logger.info('WebDAV endpoint appears to be accessible', 'OpenlistUtils')
     }
   } catch (probeError) {
-    console.warn('WebDAV probe failed (this is normal if server is still starting):', probeError)
+    logger.warn('WebDAV probe failed (this is normal if server is still starting)', 'OpenlistUtils', { error: probeError })
   }
-  console.log('=====================================')
+  logger.info('WebDAV configuration complete', 'OpenlistUtils')
 
   // 先删除可能存在的旧配置（避免端口不一致问题）
-  console.log('Deleting old rclone storage config if exists...')
+  logger.info('Deleting old rclone storage config if exists...', 'OpenlistUtils')
   try {
     await rclone_api_post('/config/delete', { name: storageName }, true)
-    console.log('Old storage config deleted (or did not exist)')
+    logger.info('Old storage config deleted (or did not exist)', 'OpenlistUtils')
   } catch (e) {
     // 配置可能不存在，忽略错误
-    console.log('No old config to delete or delete failed:', e)
+    logger.info('No old config to delete or delete failed', 'OpenlistUtils', { error: e })
   }
 
   // 短暂延迟确保删除生效
   await new Promise(resolve => setTimeout(resolve, 500))
 
-  console.log('Creating new rclone storage with updated WebDAV URL...')
+  logger.info('Creating new rclone storage with updated WebDAV URL...', 'OpenlistUtils')
   // 使用 opt.obscure = true 告诉 rclone 密码是明文需要混淆
   await createStorage(
     storageName,

@@ -1,4 +1,4 @@
-import { nmConfig, saveNmConfig } from '../../services/config'
+import { nmConfig, saveNmConfig } from '../../services/ConfigService'
 import { TaskListItem } from '../../type/config'
 import { TaskScheduler } from './scheduler'
 

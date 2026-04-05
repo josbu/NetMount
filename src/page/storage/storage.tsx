@@ -1,29 +1,32 @@
 import { Button, Grid, Popconfirm, Space, Tag, Tooltip } from '@arco-design/web-react'
 import { useTranslation } from 'react-i18next'
-import { delStorage, filterHideStorage, reupStorage } from '../../controller/storage/storage'
-import { rcloneInfo } from '../../services/rclone'
-import { useEffect, useReducer } from 'react'
-import { hooks } from '../../services/hook'
+import { delStorage, filterHideStorage } from '../../services/storage/StorageManager'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useStorageStore } from '../../stores'
 
 import { Table, TableColumnProps } from '@arco-design/web-react'
 import { NoData_module } from '../other/noData'
 import { searchStorageInfo } from '../../controller/storage/allList'
 import { IconQuestionCircle } from '@arco-design/web-react/icon'
-import { openUrlInBrowser } from '../../utils/utils'
-import { roConfig } from '../../services/config'
+import { openUrlInBrowser } from '../../utils'
+import { roConfig } from '../../services/ConfigService'
 
 const Row = Grid.Row
 const Col = Grid.Col
 
 function Storage_page() {
   const { t } = useTranslation()
-  const [ignored, forceUpdate] = useReducer(x => x + 1, 0) //刷新组件
   const navigate = useNavigate()
+  const { storageList, refreshStorage } = useStorageStore()
 
   useEffect(() => {
-    hooks.upStorage = forceUpdate
-  }, [ignored])
+    refreshStorage()
+  }, [])
+
+  const handleRefresh = () => {
+    refreshStorage()
+  }
 
   const columns: TableColumnProps[] = [
     {
@@ -54,7 +57,7 @@ function Storage_page() {
             >
               {t('add')}
             </Button>
-            <Button onClick={reupStorage}>{t('refresh')}</Button>
+            <Button onClick={handleRefresh}>{t('refresh')}</Button>
           </Space>
         </Col>
         <Col flex={'4rem'} style={{ textAlign: 'right' }}>
@@ -75,7 +78,7 @@ function Storage_page() {
           columns={columns}
           pagination={false}
           rowKey="name"
-          data={filterHideStorage(rcloneInfo.storageList).map(item => {
+          data={filterHideStorage(storageList).map(item => {
             const isNotWork =
               item.framework === 'openlist' && item.other?.openlist?.status !== 'work'
             return {

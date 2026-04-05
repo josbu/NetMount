@@ -1,13 +1,13 @@
 import { openlistInfo } from '../../services/openlist'
+import { logger } from '../../services/LoggerService'
+import { HTTP_HEADERS } from '../../constants'
 
 // API 响应接口
 interface ApiResponse {
   code?: number
   message?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any
+  data?: unknown
+  [key: string]: unknown
 }
 
 /**
@@ -36,8 +36,10 @@ async function handleApiResponse(
 ): Promise<ApiResponse> {
   // 检查 HTTP 状态
   if (!res.ok) {
-    console.error(
-      `OpenList API HTTP error [${method}]: ${res.status} ${res.statusText} for ${fullPath}`
+    logger.error(
+      `OpenList API HTTP error [${method}]: ${res.status} ${res.statusText} for ${fullPath}`,
+      undefined,
+      'OpenListAPI'
     )
     throw new Error(`HTTP ${res.status}: ${res.statusText}`)
   }
@@ -47,7 +49,7 @@ async function handleApiResponse(
   try {
     data = await res.json()
   } catch (parseError) {
-    console.error(`OpenList API JSON parse error [${method}] for ${fullPath}:`, parseError)
+    logger.error(`OpenList API JSON parse error [${method}] for ${fullPath}`, parseError as Error, 'OpenListAPI')
     throw new Error('JSON parse error')
   }
 
@@ -55,8 +57,10 @@ async function handleApiResponse(
   // 注意：业务错误（code != 200）仅记录日志，不抛出异常
   // 调用方应根据返回的 code 自行处理业务错误
   if (data.code !== undefined && data.code !== 200) {
-    console.error(
-      `OpenList API business error [${method}]: code=${data.code}, message=${data.message}, path=${fullPath}`
+    logger.error(
+      `OpenList API business error [${method}]: code=${data.code}, message=${data.message}, path=${fullPath}`,
+      undefined,
+      'OpenListAPI'
     )
   }
 
@@ -74,7 +78,7 @@ async function wrapApiCall<T>(
   try {
     return await operation()
   } catch (error) {
-    console.error(`OpenList API call failed [${method}] for ${fullPath}:`, error)
+    logger.error(`OpenList API call failed [${method}] for ${fullPath}`, error instanceof Error ? error : new Error(String(error)))
     throw error
   }
 }
@@ -97,12 +101,12 @@ async function openlist_api_ping(): Promise<boolean> {
     if (res.ok) {
       return true
     }
-    console.log(`OpenList ping returned status: ${res.status}`)
+    logger.warn(`OpenList ping returned status: ${res.status}`, 'OpenListAPI')
     return false
   } catch (e) {
     // 只在特定情况下记录错误，避免日志刷屏
     if (e instanceof Error && e.name !== 'AbortError') {
-      console.log('OpenList ping failed:', e.message)
+      logger.warn('OpenList ping failed', 'OpenListAPI', { message: e.message })
     }
     return false
   }
@@ -145,7 +149,7 @@ async function openlist_api_post(
   return wrapApiCall(
     async () => {
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+        'Content-Type': HTTP_HEADERS.CONTENT_TYPE_JSON,
       }
       if (openlistInfo.endpoint.auth.token) {
         headers['Authorization'] = openlistInfo.endpoint.auth.token

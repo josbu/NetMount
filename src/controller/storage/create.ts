@@ -2,9 +2,10 @@ import { Message } from '@arco-design/web-react'
 import { ParametersType } from '../../type/defaults'
 import { openlist_api_post } from '../../utils/openlist/request'
 import { rclone_api_post } from '../../utils/rclone/request'
-import { isEmptyObject } from '../../utils/utils'
+import { isEmptyObject } from '../../utils'
 import { searchStorageInfo } from './allList'
 import { reupStorage, searchStorage } from './storage'
+import { logger } from '../../services/LoggerService'
 
 /**
  * 验证存储名称
@@ -77,14 +78,14 @@ async function createStorage(
   const validation = validateStorageInput(name, type, parameters)
   if (!validation.valid) {
     Message.error(validation.error || '输入参数无效')
-    console.error('Storage validation failed:', validation.error)
+    logger.error('Storage validation failed', undefined, 'StorageCreate', { error: validation.error })
     return false
   }
 
   const storageInfo = searchStorageInfo(type)
   if (!storageInfo) {
     Message.error('不支持的存储类型: ' + type)
-    console.error('Storage type not found:', type)
+    logger.error('Storage type not found', undefined, 'StorageCreate', { type })
     return false
   }
 
@@ -115,7 +116,7 @@ async function createStorage(
         try {
           serializedAddition = JSON.stringify(parameters.addition)
         } catch (e) {
-          console.error('Failed to serialize addition:', e)
+          logger.error('Failed to serialize addition', e as Error, 'StorageCreate')
           Message.error('存储参数序列化失败')
           return false
         }
@@ -157,7 +158,7 @@ async function createStorage(
         return false
     }
   } catch (error) {
-    console.error('Storage operation failed:', error)
+    logger.error('Storage operation failed', error as Error, 'StorageCreate')
     Message.error('存储操作失败，请检查网络连接')
     return false
   }

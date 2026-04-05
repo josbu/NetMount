@@ -1,4 +1,4 @@
-import { sleep } from './utils'
+import { sleep } from './index'
 import { killSidecar, spawnSidecar, waitForReady } from './sidecar'
 import { readTextFileTail } from './logs'
 import { sidecarLogFile } from './netmountPaths'

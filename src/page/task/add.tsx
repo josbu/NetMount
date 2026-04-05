@@ -11,14 +11,14 @@ import {
 } from '@arco-design/web-react'
 import { useReducer, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { nmConfig, roConfig } from '../../services/config'
+import { nmConfig, roConfig } from '../../services/ConfigService'
 import { TaskListItem } from '../../type/config'
 import { rcloneInfo } from '../../services/rclone'
 import { IconQuestionCircle } from '@arco-design/web-react/icon'
-import { filterHideStorage } from '../../controller/storage/storage'
+import { filterHideStorage } from '../../services/storage/StorageManager'
 import { useNavigate } from 'react-router-dom'
 import { saveTask } from '../../controller/task/task'
-import { formatPath, getURLSearchParam } from '../../utils/utils'
+import { formatPath, getURLSearchParam } from '../../utils'
 const Row = Grid.Row
 const Col = Grid.Col
 
@@ -103,7 +103,7 @@ function AddTask_page() {
     enable: true,
   })
 
-  const [timeMultiplier, setTimeMultiplier] = useState({
+  const [timeMultiplier, setTimeMultiplier] = useState<{ name: string; value: number; multiplicand: number }>({
     ...(roConfig.options.task.dateMultiplier.select[
       roConfig.options.task.dateMultiplier.defIndex
     ] || { value: 1, name: 'day' }),

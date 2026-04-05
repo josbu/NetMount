@@ -1,71 +1,33 @@
+/**
+ * OpenList 状态管理 - 兼容层
+ * 
+ * 将全局可变状态 openlistInfo 重定向到 useOpenlistStore
+ * 保持向后兼容：原有代码无需修改导入路径
+ * 
+ * 注意：这是过渡方案，最终应直接使用 useOpenlistStore
+ */
+
+import { useOpenlistStore } from '../stores/useOpenlistStore'
 import { OpenlistInfo } from '../type/openlist/openlistInfo'
 
-const openlistInfo: OpenlistInfo = {
-  markInRclone: '.netmount-openlist.',
-  endpoint: {
-    url: '',
-    isLocal: true,
-    auth: {
-      //user: 'admin',
-      //password: randomString(16) ,//process.env.NODE_ENV === 'development' ? 'admin' : randomString(32),!!!!!密码长度为32时rclone会报错
-      token: '',
-    },
+// 创建只读 Proxy，将所有访问重定向到 store
+const openlistInfo = new Proxy({} as OpenlistInfo, {
+  get(_, prop: keyof OpenlistInfo) {
+    const state = useOpenlistStore.getState()
+    return state[prop]
   },
-  openlistConfig: {
-    // 修改默认openlist的配置
-    force: true,
-    scheme: {
-      http_port: 9751, //随机
-    },
-    temp_dir: 'data\\temp',
-    // v4 常用字段默认值
-    site_url: '',
-    cdn: '',
-    jwt_secret: '',
-    token_expires_in: 48,
-    database: {
-      type: 'sqlite3',
-      host: '',
-      port: 0,
-      user: '',
-      password: '',
-      name: '',
-      db_file: 'data/data.db', // 相对路径，会在 modifyOpenlistConfig 中转为绝对路径
-      table_prefix: 'x_',
-      ssl_mode: '',
-    },
-    bleve_dir: 'bleve',
-    log: {
-      enable: true,
-      name: 'log/log.log', // 相对路径，会在 modifyOpenlistConfig 中转为绝对路径
-      max_size: 50,
-      max_backups: 30,
-      max_age: 28,
-      compress: false,
-      filter: {
-        enable: true,
-        filters: [
-          { cidr: '', path: '/ping', method: '' }, // 过滤健康检查请求
-          { cidr: '', path: '', method: 'HEAD' }, // 过滤 HEAD 请求
-        ],
-      },
-    },
-    tasks: {
-      download: { workers: 5, max_retry: 1, expire_seconds: 0 },
-      transfer: { workers: 5, max_retry: 2, expire_seconds: 0 },
-      upload: { workers: 5, max_retry: 0, expire_seconds: 0 },
-      copy: { workers: 5, max_retry: 2, expire_seconds: 0 },
-    },
-    cors: {
-      allow_origins: ['*'],
-      allow_methods: ['*'],
-      allow_headers: ['*'],
-    },
+  set(_, prop: keyof OpenlistInfo, value) {
+    // 允许设置属性，重定向到 store 的 set 方法
+    const state = useOpenlistStore.getState()
+    const setterName = `set${prop.charAt(0).toUpperCase()}${prop.slice(1)}`
+    if (setterName in state && typeof state[setterName as keyof typeof state] === 'function') {
+      const setter = state[setterName as keyof typeof state] as (v: unknown) => void
+      setter(value)
+    } else {
+      console.warn(`Cannot set openlistInfo.${String(prop)} directly, use store actions instead`)
+    }
+    return true
   },
-  version: {
-    version: '',
-  },
-  process: {},
-}
+})
 
 export { openlistInfo }

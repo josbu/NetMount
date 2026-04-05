@@ -1,7 +1,9 @@
 import { Child } from '@tauri-apps/plugin-shell'
-import { formatPath, getAvailablePorts } from '../utils'
+import { formatPath, getAvailablePorts } from '../index'
 import { openlistInfo } from '../../services/openlist'
-import { nmConfig, osInfo } from '../../services/config'
+import { nmConfig, osInfo } from '../../services/ConfigService'
+import { logger } from '../../services/LoggerService'
+import { LOCALHOST_URLS } from '../../constants'
 import {
   ensureOpenlistWebdavPermissions,
   getOpenlistToken,
@@ -25,9 +27,9 @@ async function startOpenlist() {
   openlistInfo.openlistConfig.scheme!.http_port = (await getAvailablePorts(2))[1]!
 
   openlistInfo.endpoint.url =
-    'http://localhost:' + (openlistInfo.openlistConfig.scheme?.http_port || 5573)
-  console.log('OpenList will start on port:', openlistInfo.openlistConfig.scheme?.http_port)
-  console.log('OpenList endpoint URL:', openlistInfo.endpoint.url)
+    `${LOCALHOST_URLS.OPENLIST}:${openlistInfo.openlistConfig.scheme?.http_port || 5573}`
+  logger.info('OpenList will start on port', 'OpenList', { port: openlistInfo.openlistConfig.scheme?.http_port })
+  logger.info('OpenList endpoint URL', 'OpenList', { url: openlistInfo.endpoint.url })
 
   // 先保存配置到文件
   await modifyOpenlistConfig()
@@ -37,7 +39,7 @@ async function startOpenlist() {
     await setOpenlistPass(nmConfig.framework.openlist.password)
   } catch (e) {
     // 预启动阶段重置失败（例如 CLI 不可用），继续启动，稍后再尝试修复
-    console.warn('OpenList pre-start password reset failed, will retry after server starts:', e)
+    logger.warn('OpenList pre-start password reset failed, will retry after server starts', 'OpenList', { error: e })
   }
 
   const args: string[] = [
@@ -45,7 +47,7 @@ async function startOpenlist() {
     ...addParams(),
     ...parseExtraCliArgs(nmConfig.framework.openlist.extraArgs),
   ]
-  console.log('OpenList start args:', args)
+  logger.info('OpenList start args', 'OpenList', { args })
 
   // 使用 Rust 端启动 sidecar，确保由主进程创建
   // 传入数据目录作为工作目录，确保 openlist 能正确找到数据库文件
@@ -61,20 +63,20 @@ async function startOpenlist() {
       cwd: dataDir,
     })
   } catch (e) {
-    console.error('Failed to spawn OpenList:', e)
+    logger.error('Failed to spawn OpenList', e as Error, 'OpenList')
     throw new Error(`Failed to spawn OpenList: ${e}`)
   }
 
   openlistInfo.process.child = { pid } as Child
   openlistInfo.process.log = '' // 初始化日志
   openlistInfo.process.logFile = openlistLogFile()
-  console.log('openlist spawned from Rust, PID:', pid)
+  logger.info('openlist spawned from Rust', 'OpenList', { pid })
 
   // 服务启动后再获取 token；若失败则尝试重置密码后重试一次
   try {
     openlistInfo.endpoint.auth.token = await getOpenlistToken()
   } catch (e) {
-    console.warn('OpenList token fetch failed, trying to reset password and retry:', e)
+    logger.warn('OpenList token fetch failed, trying to reset password and retry', 'OpenList', { error: e })
     await setOpenlistPass(nmConfig.framework.openlist.password)
     openlistInfo.endpoint.auth.token = await getOpenlistToken()
   }
@@ -92,7 +94,7 @@ async function stopOpenlist() {
     binary: 'binaries/openlist',
     name: 'openlist',
   })
-  openlistInfo.process.child = undefined as unknown as Child
+  openlistInfo.process.child = undefined
 }
 
 async function restartOpenlist() {

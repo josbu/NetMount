@@ -8,19 +8,21 @@ import {
   TableColumnProps,
   Typography,
 } from '@arco-design/web-react'
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useMountList, useMountStore } from '../../stores'
 import { rcloneInfo } from '../../services/rclone'
+import { logger } from '../../services'
 import {
   delMountStorage,
+  getMountStorage,
   isMounted,
   mountStorage,
   reupMount,
   unmountStorage,
 } from '../../controller/storage/mount/mount'
 import { useTranslation } from 'react-i18next'
-import { hooks } from '../../services/hook'
 import { useNavigate } from 'react-router-dom'
-import { nmConfig, osInfo, roConfig } from '../../services/config'
+import { osInfo, roConfig } from '../../services/ConfigService'
 import { NoData_module } from '../other/noData'
 import {
   getWinFspInstallState,
@@ -28,7 +30,7 @@ import {
   openUrlInBrowser,
   openWinFspInstaller,
   showPathInExplorer,
-} from '../../utils/utils'
+} from '../../utils'
 import { IconEye, IconQuestionCircle } from '@arco-design/web-react/icon'
 import { exit } from '../../controller/main'
 const Row = Grid.Row
@@ -36,8 +38,9 @@ const Col = Grid.Col
 
 function Mount_page() {
   const { t } = useTranslation()
-  const [ignored, forceUpdate] = useReducer(x => x + 1, 0) //刷新组件
   const navigate = useNavigate()
+  const mountList = useMountList()
+  const refreshMounts = useMountStore((state) => state.refreshMounts)
   const [winFspInstallState, setWinFspInstallState] = useState<boolean>()
   const [winFspInstalling, setWinFspInstalling] = useState<boolean>()
 
@@ -70,13 +73,16 @@ function Mount_page() {
   ]
 
   const getWinFspState = async () => {
-    console.log(await getWinFspInstallState())
+    const state = await getWinFspInstallState()
+    logger.debug('WinFsp install state', 'Mount', { state })
 
-    setWinFspInstallState(await getWinFspInstallState())
+    setWinFspInstallState(state)
   }
 
   useEffect(() => {
-    hooks.upMount = forceUpdate
+    // Initial load of mounts
+    refreshMounts()
+    
     if (
       osInfo.osType === 'windows' &&
       rcloneInfo.endpoint.isLocal &&
@@ -84,7 +90,7 @@ function Mount_page() {
     ) {
       getWinFspState()
     }
-  }, [ignored])
+  }, [])
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
@@ -172,11 +178,12 @@ function Mount_page() {
           noDataElement={<NoData_module />}
           columns={columns}
           pagination={false}
-          data={nmConfig.mount.lists.map(item => {
+          data={mountList.map(item => {
             const mounted = isMounted(item.mountPath)
             return {
               key: item.mountPath, // 添加唯一 key 避免 React 警告
-              ...item,
+              storageName: item.storageName,
+              mountPath: item.mountPath,
               mountPath_: (
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                   <Typography.Ellipsis className="singe-line" showTooltip>
@@ -227,8 +234,13 @@ function Mount_page() {
                       </Button>
                       <Button
                         onClick={async () => {
-                          // 添加 async 并使用 loading 状态优化体验
-                          await mountStorage(item)
+                          // 获取完整的挂载配置
+                          const mountConfig = getMountStorage(item.mountPath)
+                          if (!mountConfig) {
+                            Message.error(t('mount_config_not_found'))
+                            return
+                          }
+                          await mountStorage(mountConfig)
                         }}
                         type="primary"
                       >

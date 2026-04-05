@@ -1,5 +1,5 @@
 import * as os from '@tauri-apps/plugin-os'
-import { setOsInfo } from '../../services/config'
+import { setOsInfo } from '../../services/ConfigService'
 import { invoke } from '@tauri-apps/api/core'
 
 async function getOsInfo() {

@@ -80,4 +80,36 @@ interface FileInfo {
   isDir: boolean
 }
 
-export { RcloneInfo, FileInfo, StorageSpace, StorageList, RcloneVersion, MountList }
+/**
+ * Raw file item from rclone API response
+ */
+interface RcloneFileItem {
+  Name: string
+  Size: number
+  MimeType?: string
+  ModTime: string
+  IsDir: boolean
+}
+
+/**
+ * Config dump response from rclone /config/dump endpoint
+ */
+interface RcloneConfigDump {
+  [key: string]: {
+    type?: string
+    [key: string]: unknown
+  }
+}
+
+/**
+ * About response from rclone /operations/about endpoint
+ */
+interface RcloneAboutResponse {
+  free?: number
+  total?: number
+  used?: number
+  trashed?: number
+  [key: string]: unknown
+}
+
+export { RcloneInfo, FileInfo, StorageSpace, StorageList, RcloneVersion, MountList, RcloneFileItem, RcloneConfigDump, RcloneAboutResponse }

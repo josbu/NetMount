@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { Child } from '@tauri-apps/plugin-shell'
 import { rcloneInfo } from '../../services/rclone'
 import { rclone_api_noop, rclone_api_post } from './request'
-import { formatPath, getAvailablePorts } from '../utils'
+import { formatPath, getAvailablePorts } from '../index'
 import { openlistInfo } from '../../services/openlist'
-import { delStorage } from '../../controller/storage/storage'
-import { nmConfig, osInfo } from '../../services/config'
+import { deleteStorage } from '../../services/storage/StorageService'
+import { nmConfig, osInfo } from '../../services/ConfigService'
+import { logger } from '../../services/LoggerService'
+import { LOCALHOST_URLS } from '../../constants'
 import { netmountLogDir, rcloneConfigFile, rcloneLogFile } from '../netmountPaths'
 import { restartSidecar, startSidecarAndWait, stopSidecarGracefully } from '../sidecarService'
 import { parseExtraCliArgs } from '../cliArgs'
@@ -24,7 +26,7 @@ async function startRclone() {
   //自动分配端口
   rcloneInfo.endpoint.localhost.port = (await getAvailablePorts(2))[1]!
 
-  rcloneInfo.endpoint.url = 'http://127.0.0.1:' + rcloneInfo.endpoint.localhost.port.toString()
+  rcloneInfo.endpoint.url = `${LOCALHOST_URLS.RCLONE}:${rcloneInfo.endpoint.localhost.port.toString()}`
 
   // 确保日志目录存在（用于“设置-组件-日志”查看）
   const logDir = netmountLogDir()
@@ -62,11 +64,11 @@ async function startRclone() {
     initialDelayMs: 1000,
   })
   rcloneInfo.process.child = { pid } as Child
-  console.log('rclone spawned from Rust, PID:', pid)
+  logger.info('rclone spawned from Rust', 'Rclone', { pid })
 }
 
 async function stopRclone() {
-  await delStorage(openlistInfo.markInRclone)
+  await deleteStorage(openlistInfo.markInRclone)
   await stopSidecarGracefully({
     binary: 'binaries/rclone',
     name: 'rclone',
@@ -74,7 +76,7 @@ async function stopRclone() {
       await rclone_api_post('/core/quit')
     },
   })
-  rcloneInfo.process.child = undefined as unknown as Child
+  rcloneInfo.process.child = undefined
 }
 
 async function restartRclone() {

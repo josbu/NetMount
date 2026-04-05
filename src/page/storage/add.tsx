@@ -15,11 +15,12 @@ import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { createStorage } from '../../controller/storage/create'
 import { useNavigate } from 'react-router-dom'
-import { getProperties, getURLSearchParam, openUrlInBrowser } from '../../utils/utils'
-import { getStorageParams, searchStorage } from '../../controller/storage/storage'
+import { getProperties, getURLSearchParam, openUrlInBrowser } from '../../utils'
+import { getStorageParams, searchStorage } from '../../services/storage/StorageManager'
 // import { rcloneInfo } from "../../services/rclone";
 import { IconQuestionCircle } from '@arco-design/web-react/icon'
-import { nmConfig, roConfig } from '../../services/config'
+import { nmConfig, roConfig } from '../../services/ConfigService'
+import { logger } from '../../services'
 import { searchStorageInfo, storageInfoList } from '../../controller/storage/allList'
 import { ParametersType } from '../../type/defaults'
 import { StorageInfoType } from '../../type/controller/storage/info'
@@ -62,13 +63,8 @@ function AddStorage_page() {
   const [storageParams, setStorageParams] = useState<ParametersType>() //编辑模式下，覆盖默认参数
   const [originalPasswordValues, setOriginalPasswordValues] = useState<ParametersType>({}) //保存原始密码值（混淆后的）
 
-  //let parameters: ParametersType = {};
-
-  /*     const setParams = (key: string, value: any) => {
-            parameters[key] = value;
-        }; */
   const storageInfo = searchStorageInfo(storageTypeName)
-  console.log(storageInfo)
+  logger.debug('Storage info loaded', 'Storage', { type: storageTypeName, info: storageInfo })
 
   const editMode = async () => {
     const name = getURLSearchParam('name')
@@ -353,7 +349,7 @@ function AddStorage_page() {
                       }
                     }
                     
-                    console.log(parameters)
+                    logger.debug('Storage parameters', 'Storage', { parameters })
 
                     //return
 

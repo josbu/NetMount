@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react'
+import { useEffect } from 'react'
 
 import {
   Alert,
@@ -13,15 +13,17 @@ import {
   Spin,
   Typography,
 } from '@arco-design/web-react'
-import { rcloneInfo } from '../../services/rclone'
 import { hooks } from '../../services/hook'
 import { checkUpdate } from '../../controller/update/update'
 import * as shell from '@tauri-apps/plugin-shell'
-import { formatETA, formatSize } from '../../utils/utils'
+import { formatETA, formatSize } from '../../utils'
 import { useTranslation } from 'react-i18next'
-import { nmConfig } from '../../services/config'
+import { nmConfig } from '../../services/ConfigService'
+import { rcloneInfo } from '../../services/rclone'
 import { IconCloud, IconList, IconStorage, IconSwap } from '@arco-design/web-react/icon'
-import { filterHideStorage } from '../../controller/storage/storage'
+import { filterHideStorage } from '../../services/storage/StorageManager'
+import { useStatsStore } from '../../stores/useStatsStore'
+import { useStorageList, useMountList } from '../../stores'
 const Row = Grid.Row
 const Col = Grid.Col
 
@@ -31,10 +33,11 @@ let checkedUpdate: boolean = false
 
 function Home_page() {
   const { t } = useTranslation()
-  const [, forceUpdate] = useReducer(x => x + 1, 0) //刷新组件
+  const { increment: incrementStats } = useStatsStore()
   const [modal, contextHolder] = Modal.useModal()
   const [notification, noticeContextHolder] = Notification.useNotification()
-  const storageList = filterHideStorage(rcloneInfo.storageList)
+  const storageList = filterHideStorage(useStorageList())
+  const mountList = useMountList()
 
   useEffect(() => {
     const showNotice = () => {
@@ -48,9 +51,9 @@ function Home_page() {
       }
     }
 
-    hooks.upStats = forceUpdate
+    hooks.upStats = incrementStats
     hooks.upNotice = showNotice
-    hooks.upStartup = forceUpdate
+    hooks.upStartup = incrementStats
     showNotice()
 
     if (!checkedUpdate) {
@@ -245,7 +248,7 @@ function Home_page() {
                 <IconStorage /> {t('mount')}
               </strong>
               (
-              {isStorageInitPending ? '_' : isStorageInitFailed ? '-' : rcloneInfo.mountList.length}
+              {isStorageInitPending ? '_' : isStorageInitFailed ? '-' : mountList.length}
               )
               <div style={{ paddingTop: '1.3rem', width: '100%', textAlign: 'center' }}>
                 <Space>

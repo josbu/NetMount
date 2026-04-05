@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import i18n from '../../services/i18n'
-import { roConfig } from '../../services/config'
+import { roConfig } from '../../services/ConfigService'
 import { hooks } from '../../services/hook'
 import { normalizeI18nPack } from '../../services/i18nPack'
 
