@@ -209,7 +209,7 @@ async function rclone_api_wait_for_job(
     }
 
     if (timeout > 0 && Date.now() - startTime > timeout) {
-      console.error(`Job ${jobid} timed out`)
+      logger.error(`Job ${jobid} timed out`, undefined, 'Rclone')
       Message.error('Task timed out')
       await rclone_api_post('/job/stop', { jobid }, true).catch(() => {})
       return false

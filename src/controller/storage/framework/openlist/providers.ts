@@ -1,5 +1,6 @@
 import { StorageInfoType, StorageParamItemType } from '../../../../type/controller/storage/info'
 import { openlist_api_get } from '../../../../utils/openlist/request'
+import { logger } from '../../../../services/LoggerService'
 
 function normalizeStorageId(raw: string): string {
   return String(raw ?? '')
@@ -61,8 +62,8 @@ function normalizeDriverList(data: unknown): Record<string, DriverInfo> {
     return result
   }
 
-  console.error('Unknown driver list structure:', data)
-  return {}
+    logger.error('Unknown driver list structure:', undefined, 'OpenListProviders', { data })
+    return {}
 }
 
 function safeGetDriverConfig(provider: DriverInfo, key: string): { name?: string } {
@@ -71,7 +72,7 @@ function safeGetDriverConfig(provider: DriverInfo, key: string): { name?: string
   if (!provider) return defaultConfig
 
   if (!provider.config) {
-    console.warn(`Driver ${key} missing config field, using fallback`)
+    logger.warn(`Driver ${key} missing config field, using fallback`, 'OpenListProviders')
     return { name: key }
   }
 
@@ -89,12 +90,12 @@ function safeGetDriverOptions(
   const options = provider[field]
 
   if (!options) {
-    console.warn(`Driver ${provider.name || 'unknown'} missing ${field} field`)
+    logger.warn(`Driver ${provider.name || 'unknown'} missing ${field} field`, 'OpenListProviders')
     return []
   }
 
   if (!Array.isArray(options)) {
-    console.warn(`Driver ${provider.name || 'unknown'} ${field} is not an array`)
+    logger.warn(`Driver ${provider.name || 'unknown'} ${field} is not an array`, 'OpenListProviders')
     return []
   }
 
@@ -106,7 +107,7 @@ async function updateOpenlistStorageInfoList() {
     const response = await openlist_api_get('/api/admin/driver/list')
 
     if (!response.data) {
-      console.error('Failed to get driver list: no data in response', response)
+      logger.error('Failed to get driver list: no data in response', undefined, 'OpenListProviders', { response })
       return []
     }
 
@@ -114,7 +115,7 @@ async function updateOpenlistStorageInfoList() {
     const openlistStorageInfoList: StorageInfoType[] = []
 
     if (Object.keys(openlistProviders).length === 0) {
-      console.log('Driver list normalization failed, trying fallback approach...')
+      logger.info('Driver list normalization failed, trying fallback approach...', 'OpenListProviders')
       return await updateOpenlistStorageInfoListFallback()
     }
 
@@ -123,7 +124,7 @@ async function updateOpenlistStorageInfoList() {
         const provider = openlistProviders[key]
 
         if (!provider || typeof provider !== 'object') {
-          console.warn(`Skipping invalid driver data for key: ${key}`)
+          logger.warn(`Skipping invalid driver data for key: ${key}`, 'OpenListProviders')
           continue
         }
 
@@ -139,7 +140,7 @@ async function updateOpenlistStorageInfoList() {
 
           for (const option of options) {
             if (!option || typeof option !== 'object') {
-              console.warn(`Skipping invalid option in driver ${key}`)
+              logger.warn(`Skipping invalid option in driver ${key}`, 'OpenListProviders')
               continue
             }
 
@@ -195,7 +196,7 @@ async function updateOpenlistStorageInfoList() {
                   }
                 })
               } catch (e) {
-                console.warn(`Failed to parse select options for ${option.name}:`, e)
+                logger.warn(`Failed to parse select options for ${option.name}: ${e}`, 'OpenListProviders')
                 storageParam.select = []
               }
             }
@@ -258,26 +259,26 @@ async function updateOpenlistStorageInfoList() {
           },
         })
       } catch (driverError) {
-        console.error(`Error processing driver ${key}:`, driverError)
+        logger.error(`Error processing driver ${key}:`, driverError as Error, 'OpenListProviders')
         continue
       }
     }
 
-    console.log(`Successfully loaded ${openlistStorageInfoList.length} OpenList drivers`)
+    logger.info(`Successfully loaded ${openlistStorageInfoList.length} OpenList drivers`, 'OpenListProviders')
     return openlistStorageInfoList
   } catch (error) {
-    console.error('Failed to update OpenList storage info list:', error)
+    logger.error('Failed to update OpenList storage info list:', error as Error, 'OpenListProviders')
     return []
   }
 }
 
 async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[]> {
   try {
-    console.log('Using fallback: /api/admin/driver/names + /api/admin/driver/info')
+    logger.info('Using fallback: /api/admin/driver/names + /api/admin/driver/info', 'OpenListProviders')
 
     const namesResponse = await openlist_api_get('/api/admin/driver/names')
     if (!namesResponse.data || !Array.isArray(namesResponse.data)) {
-      console.error('Failed to get driver names:', namesResponse)
+      logger.error('Failed to get driver names:', undefined, 'OpenListProviders', { response: namesResponse })
       return []
     }
 
@@ -289,7 +290,7 @@ async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[
           driver: driverName,
         })
         if (!infoResponse.data) {
-          console.warn(`Failed to get info for driver ${driverName}`)
+          logger.warn(`Failed to get info for driver ${driverName}`, 'OpenListProviders')
           continue
         }
 
@@ -369,15 +370,15 @@ async function updateOpenlistStorageInfoListFallback(): Promise<StorageInfoType[
           },
         })
       } catch (e) {
-        console.warn(`Error fetching driver info for ${driverName}:`, e)
+        logger.warn(`Error fetching driver info for ${driverName}: ${e}`, 'OpenListProviders')
         continue
       }
     }
 
-    console.log(`Fallback: Successfully loaded ${openlistStorageInfoList.length} OpenList drivers`)
+    logger.info(`Fallback: Successfully loaded ${openlistStorageInfoList.length} OpenList drivers`, 'OpenListProviders')
     return openlistStorageInfoList
   } catch (error) {
-    console.error('Fallback approach also failed:', error)
+    logger.error('Fallback approach also failed:', error as Error, 'OpenListProviders')
     return []
   }
 }

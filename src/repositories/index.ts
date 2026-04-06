@@ -11,6 +11,8 @@ export * from './interfaces/IRepository'
 // 具体 Repository 实现
 export { ConfigRepository, configRepository } from './config/ConfigRepository'
 export { StorageRepository, storageRepository } from './storage/StorageRepository'
+export { MountRepository, mountRepository } from './mount/MountRepository'
+export { TaskRepository, taskRepository } from './task/TaskRepository'
 
 // ============================================
 // 使用示例

@@ -1,6 +1,7 @@
 import type { TaskListItem } from '../../type/config'
 import { runTask } from './runner'
 import { delTask } from './task'
+import { logger } from '../../services/LoggerService'
 
 class TaskScheduler {
   tasks: TaskListItem[]
@@ -53,7 +54,7 @@ class TaskScheduler {
         task.run.runId = window.setInterval(async () => await this.executeTask(task), task.run.interval)
         break
       default:
-        console.error('Invalid task mode:', task.run.mode)
+        logger.error(`Invalid task mode: ${task.run.mode}`, undefined, 'TaskScheduler')
     }
   }
 

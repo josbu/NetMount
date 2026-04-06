@@ -1,5 +1,6 @@
 import type { TaskListItem } from '../../type/config'
 import { copyDir, copyFile, delDir, delFile, moveDir, moveFile, sync } from '../../services/storage'
+import { logger } from '../../services/LoggerService'
 
 async function runTask(task: TaskListItem): Promise<TaskListItem> {
   const executeTask = (t: TaskListItem) => {
@@ -63,7 +64,7 @@ async function runTask(task: TaskListItem): Promise<TaskListItem> {
       task.runInfo = { ...task.runInfo, error: false, msg: '' }
     }
   } catch (error) {
-    console.error(`Error executing task ${task.name}:`, error)
+    logger.error(`Error executing task ${task.name}:`, error as Error, 'TaskRunner')
     task.runInfo = {
       ...task.runInfo,
       error: true,

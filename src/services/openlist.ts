@@ -9,6 +9,7 @@
 
 import { useOpenlistStore } from '../stores/useOpenlistStore'
 import { OpenlistInfo } from '../type/openlist/openlistInfo'
+import { logger } from './LoggerService'
 
 // 创建只读 Proxy，将所有访问重定向到 store
 const openlistInfo = new Proxy({} as OpenlistInfo, {
@@ -24,7 +25,7 @@ const openlistInfo = new Proxy({} as OpenlistInfo, {
       const setter = state[setterName as keyof typeof state] as (v: unknown) => void
       setter(value)
     } else {
-      console.warn(`Cannot set openlistInfo.${String(prop)} directly, use store actions instead`)
+      logger.warn(`Cannot set openlistInfo.${String(prop)} directly, use store actions instead`, 'OpenList')
     }
     return true
   },
