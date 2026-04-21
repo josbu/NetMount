@@ -4,14 +4,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  getFileList,
   delFile,
   delDir,
   mkDir,
 } from '../FileManager'
 
 // Mock 依赖模块
-vi.mock('../../utils/rclone/request', () => ({
+vi.mock('../../../utils/rclone/request', () => ({
   rclone_api_post: vi.fn(),
   getRcloneApiHeaders: vi.fn(() => ({ Authorization: 'Bearer test' })),
 }))
@@ -35,7 +34,7 @@ describe('FileManager', () => {
 
   describe('delFile', () => {
     it('should delete file successfully', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
 
       await delFile('storage1', '/folder/file.txt')
@@ -47,7 +46,7 @@ describe('FileManager', () => {
     })
 
     it('should remove leading slash from path', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
 
       await delFile('storage1', 'folder/file.txt')
@@ -56,7 +55,7 @@ describe('FileManager', () => {
     })
 
     it('should call refresh callback after deletion', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
       const refreshCallback = vi.fn()
 
@@ -68,7 +67,7 @@ describe('FileManager', () => {
 
   describe('delDir', () => {
     it('should delete directory successfully', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
 
       await delDir('storage1', '/folder')
@@ -80,7 +79,7 @@ describe('FileManager', () => {
     })
 
     it('should call refresh callback after deletion', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
       const refreshCallback = vi.fn()
 
@@ -92,7 +91,7 @@ describe('FileManager', () => {
 
   describe('mkDir', () => {
     it('should create directory successfully', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
 
       await mkDir('storage1', '/new-folder')
@@ -104,7 +103,7 @@ describe('FileManager', () => {
     })
 
     it('should call refresh callback after creation', async () => {
-      const { rclone_api_post } = await import('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce(undefined)
       const refreshCallback = vi.fn()
 

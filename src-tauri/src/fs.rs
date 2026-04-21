@@ -171,10 +171,32 @@ pub fn read_text_file_tail(
 
 use serde_json::{to_string_pretty, Value};
 
+/// 验证路径是否在允许的目录内（防止路径遍历攻击）
+fn validate_path_in_allowed_dir(app: &tauri::AppHandle<Runtime>, path: &Path) -> anyhow::Result<PathBuf> {
+    let base = app_data_dir(app)?;
+    let base = base.canonicalize().unwrap_or(base);
+    let candidate = path.canonicalize().unwrap_or(path.to_path_buf());
+    
+    if !candidate.starts_with(&base) {
+        return Err(anyhow::anyhow!(
+            "Access denied: only files under {} are allowed",
+            base.display()
+        ));
+    }
+    
+    Ok(candidate)
+}
+
 #[tauri::command]
-pub fn read_json_file(path: Option<&str>) -> Result<Value, String> {
-    let path = path.ok_or_else(|| "Path is required".to_string())?;
-    let content_result = fs::read_to_string(PathBuf::from(path));
+pub fn read_json_file(app: tauri::AppHandle<Runtime>, path: Option<&str>) -> Result<Value, String> {
+    let path_str = path.ok_or_else(|| "Path is required".to_string())?;
+    let resolved_path = resolve_path(&app, path_str);
+    
+    // 安全：验证路径在允许目录内
+    let validated_path = validate_path_in_allowed_dir(&app, &resolved_path)
+        .map_err(|e| e.to_string())?;
+    
+    let content_result = fs::read_to_string(validated_path);
     match content_result {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(config) => Ok(config),
@@ -185,20 +207,35 @@ pub fn read_json_file(path: Option<&str>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn write_json_file(config_data: Value, path: Option<&str>) -> Result<(), String> {
-    let path = path.ok_or_else(|| "Path is required".to_string())?;
+pub async fn write_json_file(app: tauri::AppHandle<Runtime>, config_data: Value, path: Option<&str>) -> Result<(), String> {
+    let path_str = path.ok_or_else(|| "Path is required".to_string())?;
+    let resolved_path = resolve_path(&app, path_str);
+    
+    // 安全：验证路径在允许目录内
+    let validated_path = validate_path_in_allowed_dir(&app, &resolved_path)
+        .map_err(|e| e.to_string())?;
+    
     let pretty_config = to_string_pretty(&config_data)
         .map_err(|json_error| format!("Failed to serialize JSON: {}", json_error))?;
 
-    fs::write(PathBuf::from(path), pretty_config)
+    fs::write(validated_path, pretty_config)
         .map_err(|io_error| format!("Failed to write file: {}", io_error))?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn copy_file(src: &str, dest: &str) -> Result<(), String> {
-    fs::copy(src, dest)
+pub fn copy_file(app: tauri::AppHandle<Runtime>, src: &str, dest: &str) -> Result<(), String> {
+    let src_path = resolve_path(&app, src);
+    let dest_path = resolve_path(&app, dest);
+    
+    // 安全：验证源路径和目标路径都在允许目录内
+    let validated_src = validate_path_in_allowed_dir(&app, &src_path)
+        .map_err(|e| e.to_string())?;
+    let validated_dest = validate_path_in_allowed_dir(&app, &dest_path)
+        .map_err(|e| e.to_string())?;
+    
+    fs::copy(validated_src, validated_dest)
         .map_err(|io_error| format!("Failed to copy file: {}", io_error))?;
     Ok(())
 }
@@ -398,7 +435,7 @@ pub fn import_config(
         }
         fs::create_dir_all(&temp_dir)?;
         
-        // 解压所有文件到临时目录
+        // 解压所有文件到临时目录（带 Zip Slip 防护）
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i)?;
             let entry_name = entry.name().to_string();
@@ -408,7 +445,31 @@ pub fn import_config(
                 continue;
             }
             
+            // 安全：防止 Zip Slip 攻击
+            // 检查 entry_name 不包含路径遍历字符
+            if entry_name.contains("..") || entry_name.contains('\\') {
+                return Err(anyhow::anyhow!(
+                    "安全警告：ZIP 文件包含可疑路径 '{}'",
+                    entry_name
+                ));
+            }
+            
             let target_path = temp_dir.join(&entry_name);
+            
+            // 安全：验证目标路径在临时目录内（防止 Zip Slip）
+            let temp_dir_canonical = temp_dir.canonicalize().unwrap_or_else(|_| temp_dir.clone());
+            // 对于新创建的文件，需要检查父目录
+            if let Some(parent) = target_path.parent() {
+                if parent.exists() {
+                    let parent_canonical = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+                    if !parent_canonical.starts_with(&temp_dir_canonical) {
+                        return Err(anyhow::anyhow!(
+                            "安全警告：ZIP 条目路径 '{}' 试图逃逸目标目录",
+                            entry_name
+                        ));
+                    }
+                }
+            }
             
             // 确保父目录存在
             if let Some(parent) = target_path.parent() {

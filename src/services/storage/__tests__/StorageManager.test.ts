@@ -4,9 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import {
-  reupStorage,
   delStorage,
-  getStorageParams,
   searchStorage,
   filterHideStorage,
   convertStoragePath,
@@ -87,8 +85,8 @@ describe('StorageManager', () => {
       const result = filterHideStorage(storages)
 
       expect(result).toHaveLength(2)
-      expect(result[0].name).toBe('storage1')
-      expect(result[1].name).toBe('storage3')
+      expect(result[0]!.name).toBe('storage1')
+      expect(result[1]!.name).toBe('storage3')
     })
 
     it('should return empty array for all hidden storages', () => {
@@ -115,8 +113,8 @@ describe('StorageManager', () => {
   })
 
   describe('searchStorage', () => {
-    it('should find storage by name', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should find storage by name', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = [
         { name: 'storage1', framework: 'rclone', type: 's3' },
         { name: 'storage2', framework: 'rclone', type: 's3' },
@@ -128,8 +126,8 @@ describe('StorageManager', () => {
       expect(result?.name).toBe('storage1')
     })
 
-    it('should find openlist storage by driverPath', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should find openlist storage by driverPath', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = [
         {
           name: 'storage1',
@@ -149,8 +147,8 @@ describe('StorageManager', () => {
       expect(result?.name).toBe('storage1')
     })
 
-    it('should return undefined for non-existent storage', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should return undefined for non-existent storage', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = []
 
       const result = searchStorage('non-existent')
@@ -192,8 +190,8 @@ describe('StorageManager', () => {
   })
 
   describe('convertStoragePath', () => {
-    it('should convert rclone storage path', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should convert rclone storage path', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = [
         { name: 'mys3', framework: 'rclone', type: 's3' },
       ]
@@ -203,8 +201,8 @@ describe('StorageManager', () => {
       expect(result).toBe('mys3:folder/file.txt')
     })
 
-    it('should return only storage name when onlyStorageName is true', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should return only storage name when onlyStorageName is true', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = [
         { name: 'mys3', framework: 'rclone', type: 's3' },
       ]
@@ -214,8 +212,8 @@ describe('StorageManager', () => {
       expect(result).toBe('mys3')
     })
 
-    it('should return empty string for unknown storage', () => {
-      const { rcloneInfo } = require('../../services/rclone')
+    it('should return empty string for unknown storage', async () => {
+      const { rcloneInfo } = await import('../../rclone')
       rcloneInfo.storageList = []
 
       const result = convertStoragePath('unknown', '/folder/file.txt')
@@ -226,7 +224,7 @@ describe('StorageManager', () => {
 
   describe('getStorageSpace', () => {
     it('should return storage space info', async () => {
-      const { rclone_api_post } = require('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockResolvedValueOnce({
         total: 1000000,
         free: 500000,
@@ -243,7 +241,7 @@ describe('StorageManager', () => {
     })
 
     it('should return negative values when storage is not accessible', async () => {
-      const { rclone_api_post } = require('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockRejectedValueOnce(new Error('Storage not found'))
 
       const result = await getStorageSpace('test-storage')
@@ -252,7 +250,7 @@ describe('StorageManager', () => {
     })
 
     it('should mark internal storage for cleanup when inaccessible', async () => {
-      const { rclone_api_post } = require('../../utils/rclone/request')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_post).mockRejectedValueOnce(new Error('Storage not found'))
 
       const result = await getStorageSpace('.netmount-test')
@@ -263,8 +261,8 @@ describe('StorageManager', () => {
 
   describe('delStorage', () => {
     it('should delete rclone storage', async () => {
-      const { rcloneInfo } = require('../../services/rclone')
-      const { rclone_api_post } = require('../../utils/rclone/request')
+      const { rcloneInfo } = await import('../../rclone')
+      const { rclone_api_post } = await import('../../../utils/rclone/request')
       
       rcloneInfo.storageList = [
         { name: 'test-storage', framework: 'rclone', type: 's3' },
@@ -279,8 +277,8 @@ describe('StorageManager', () => {
     })
 
     it('should delete openlist storage', async () => {
-      const { rcloneInfo } = require('../../services/rclone')
-      const { openlist_api_post } = require('../../utils/openlist/request')
+      const { rcloneInfo } = await import('../../rclone')
+      const { openlist_api_post } = await import('../../../utils/openlist/request')
       
       rcloneInfo.storageList = [
         {
@@ -294,7 +292,7 @@ describe('StorageManager', () => {
           },
         },
       ]
-      vi.mocked(openlist_api_post).mockResolvedValueOnce(undefined)
+      vi.mocked(openlist_api_post).mockResolvedValueOnce({} as any)
 
       await delStorage('test-storage')
 

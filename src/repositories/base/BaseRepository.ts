@@ -32,6 +32,35 @@ const DEFAULT_CONFIG: RepositoryConfig = {
 }
 
 // ============================================
+// 敏感字段过滤
+// ============================================
+const SENSITIVE_FIELDS = [
+  'password', 'secret', 'token', 'apiKey', 'api_key', 'accessKey', 'access_key',
+  'secretKey', 'secret_key', 'credential', 'auth', 'authorization',
+  'privateKey', 'private_key', 'pass', 'passwd', 'pwd',
+]
+
+/**
+ * 过滤敏感字段，返回安全的日志参数
+ */
+function sanitizeArgs(args?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!args) return undefined
+  
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(args)) {
+    const lowerKey = key.toLowerCase()
+    if (SENSITIVE_FIELDS.some(field => lowerKey.includes(field))) {
+      sanitized[key] = '[REDACTED]'
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeArgs(value as Record<string, unknown>)
+    } else {
+      sanitized[key] = value
+    }
+  }
+  return sanitized
+}
+
+// ============================================
 // BaseRepository 抽象类
 // ============================================
 export abstract class BaseRepository<T> implements IRepository<T> {
@@ -70,7 +99,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
     const startTime = Date.now()
     const argsStr = JSON.stringify(args)
 
-    this.contextLogger.debug(`Invoking command: ${command}`, { args })
+    this.contextLogger.debug(`Invoking command: ${command}`, sanitizeArgs(args))
 
     try {
       // 检查缓存
@@ -99,7 +128,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
       this.contextLogger.error(
         `Command ${command} failed after ${duration}ms`,
         error as Error,
-        { args }
+        sanitizeArgs(args)
       )
 
       throw this.handleError(error, command)

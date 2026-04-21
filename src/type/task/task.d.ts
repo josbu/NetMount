@@ -73,6 +73,7 @@ export interface TaskEntity {
  * - delete: 删除文件
  * - bisync: 双向同步
  */
+// eslint-disable-next-line @typescript-eslint/ban-types
 export type TaskType = 'copy' | 'move' | 'sync' | 'delete' | 'bisync' | (string & {})
 
 /**

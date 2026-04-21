@@ -122,7 +122,7 @@ export class AppError extends Error {
   }
 
   /**
-   * 转换为 JSON 对象
+   * 转换为 JSON 对象（生产环境不包含 stack trace）
    */
   toJSON(): Record<string, unknown> {
     return {
@@ -131,9 +131,11 @@ export class AppError extends Error {
       category: this.category,
       severity: this.severity,
       code: this.code,
-      context: this.context,
+      // 仅在开发环境包含 context，生产环境可能包含敏感数据
+      context: import.meta.env.DEV ? this.context : undefined,
       timestamp: this.timestamp.toISOString(),
-      stack: this.stack,
+      // 仅在开发环境包含 stack trace，生产环境不暴露内部实现细节
+      stack: import.meta.env.DEV ? this.stack : undefined,
     }
   }
 

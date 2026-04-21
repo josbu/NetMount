@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ConfigRepository, configRepository } from '../config/ConfigRepository'
-import { ErrorCode } from '../interfaces/IRepository'
 
 // Mock 依赖模块
 vi.mock('@tauri-apps/api/core', () => ({
@@ -27,7 +26,7 @@ describe('ConfigRepository', () => {
 
       const result = await repository.getById('main')
 
-      expect(result).not.toBeNull()
+      expect(result!).not.toBeNull()
       expect(result?.settings?.themeMode).toBe('dark')
     })
 
@@ -46,14 +45,14 @@ describe('ConfigRepository', () => {
 
       const result = await repository.getAll()
 
-      expect(result).toHaveLength(1)
-      expect(result[0].settings?.themeMode).toBe('dark')
+      expect(result!).toHaveLength(1)
+      expect((result![0])!.settings?.themeMode).toBe('dark')
     })
   })
 
   describe('create', () => {
     it('should throw error as config already exists', async () => {
-      await expect(repository.create({ settings: {} })).rejects.toThrow('Config already exists')
+      await expect(repository.create({ settings: { themeMode: 'dark', startHide: false, autoRecoverComponents: false, path: {} } })).rejects.toThrow('Config already exists')
     })
   })
 
@@ -63,7 +62,7 @@ describe('ConfigRepository', () => {
       const mockConfig = { settings: { themeMode: 'light' }, storage: [] }
       vi.mocked(invoke).mockResolvedValueOnce(mockConfig).mockResolvedValueOnce(mockConfig)
 
-      const result = await repository.update('main', { settings: { themeMode: 'dark' } })
+      const result = await repository.update('main', { settings: { themeMode: 'dark', startHide: false, autoRecoverComponents: false, path: {} } })
 
       expect(result).not.toBeNull()
     })

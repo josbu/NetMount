@@ -55,8 +55,8 @@ describe('StorageRepository', () => {
       const result = await repository.getAll()
 
       expect(result).toHaveLength(2)
-      expect(result[0].name).toBe('storage1')
-      expect(result[1].name).toBe('storage2')
+      expect(result[0]!.name).toBe('storage1')
+      expect(result[1]!.name).toBe('storage2')
     })
   })
 
@@ -92,7 +92,7 @@ describe('StorageRepository', () => {
 
       expect(rcloneStorages).toHaveLength(2)
       expect(openlistStorages).toHaveLength(1)
-      expect(openlistStorages[0].name).toBe('storage2')
+      expect(openlistStorages[0]!.name).toBe('storage2')
     })
   })
 

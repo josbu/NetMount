@@ -4,15 +4,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  copyFile,
   copyDir,
-  moveFile,
   moveDir,
   sync,
 } from '../TransferService'
 
 // Mock 依赖模块
-vi.mock('../../utils/rclone/request', () => ({
+vi.mock('../../../utils/rclone/request', () => ({
   rclone_api_post: vi.fn(),
   rclone_api_exec_async: vi.fn(),
 }))
@@ -30,7 +28,7 @@ describe('TransferService', () => {
 
   describe('copyDir', () => {
     it('should copy directory successfully', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(true)
 
       await copyDir('src-storage', '/source-folder', 'dst-storage', '/dest-folder')
@@ -47,7 +45,7 @@ describe('TransferService', () => {
     })
 
     it('should throw error when copy fails', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(false)
 
       await expect(copyDir('src', '/folder', 'dst', '/folder')).rejects.toThrow('Copy directory failed')
@@ -56,7 +54,7 @@ describe('TransferService', () => {
 
   describe('moveDir', () => {
     it('should move directory successfully', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(true)
 
       await moveDir('src-storage', '/source-folder', 'dst-storage', '/dest-folder')
@@ -65,7 +63,7 @@ describe('TransferService', () => {
     })
 
     it('should support renaming during move', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(true)
 
       await moveDir('src', '/folder', 'dst', '/dest', 'new-name')
@@ -74,7 +72,7 @@ describe('TransferService', () => {
     })
 
     it('should throw error when move fails', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(false)
 
       await expect(moveDir('src', '/folder', 'dst', '/folder')).rejects.toThrow('Move directory failed')
@@ -83,7 +81,7 @@ describe('TransferService', () => {
 
   describe('sync', () => {
     it('should perform one-way sync', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(true)
 
       await sync('src', '/folder1', 'dst', '/folder2')
@@ -92,7 +90,7 @@ describe('TransferService', () => {
     })
 
     it('should perform bidirectional sync when bisync is true', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(true)
 
       await sync('src', '/folder1', 'dst', '/folder2', true)
@@ -101,14 +99,14 @@ describe('TransferService', () => {
     })
 
     it('should throw error when sync fails', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(false)
 
       await expect(sync('src', '/folder1', 'dst', '/folder2')).rejects.toThrow('Sync failed')
     })
 
     it('should throw error for bidirectional sync failure', async () => {
-      const { rclone_api_exec_async } = await import('../../utils/rclone/request')
+      const { rclone_api_exec_async } = await import('../../../utils/rclone/request')
       vi.mocked(rclone_api_exec_async).mockResolvedValueOnce(false)
 
       await expect(sync('src', '/folder1', 'dst', '/folder2', true)).rejects.toThrow('Bidirectional sync failed')

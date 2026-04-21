@@ -44,9 +44,9 @@ interface LoggerConfig {
 
 const DEFAULT_CONFIG: LoggerConfig = {
   minLevel: import.meta.env.DEV ? LogLevel.DEBUG : LogLevel.INFO,
-  enableConsole: true,
+  enableConsole: import.meta.env.DEV, // 仅在开发环境启用 console 输出，生产环境禁用防止敏感数据泄露
   enablePersistence: false,
-  maxLogEntries: 1000,
+  maxLogEntries: import.meta.env.DEV ? 1000 : 100, // 生产环境减少内存占用
 }
 
 // ============================================
