@@ -2,41 +2,38 @@
  * MountRepository - 挂载数据访问层
  * 
  * 封装挂载相关的数据访问操作
- * 当前实现：调用现有Service层
+ * 重构：直接操作 nmConfig，不再依赖 Controller 层
  */
 
 import { BaseRepository } from '../base/BaseRepository'
 import { RepositoryError, ErrorCode } from '../interfaces/IRepository'
 import { logger } from '../../services/LoggerService'
-import {
-  mountStorage as mountStorageService,
-  unmountStorage as unmountStorageService,
-  reupMount,
-  isMounted,
-  addMountStorage,
-  delMountStorage,
-} from '../../controller/storage/mount/mount'
+import { nmConfig, saveNmConfig } from '../../services/ConfigService'
+import { rcloneInfo } from '../../services/rclone'
+import { useMountStore } from '../../stores/mountStore'
+import { hooks } from '../../services/hook'
+import { rclone_api_post } from '../../utils/rclone/request'
+import { fs_exist_dir, fs_make_dir } from '../../utils'
+import { convertStoragePath } from '../../services/storage/StorageManager'
 import type { MountEntity, MountStatus, VfsOptions, MountOptions } from '../../type/mount/mount'
 import type { MountListItem } from '../../type/config'
-import { rcloneInfo } from '../../services/rclone'
+import type { MountList } from '../../type/rclone/rcloneInfo'
+import { isMountListResponse } from '../../type/rclone/api'
+
+const mountLogger = logger.withContext('MountRepository')
 
 /**
  * MountRepository 类
  */
 export class MountRepository extends BaseRepository<MountEntity> {
-  private mountLogger = logger.withContext('MountRepository')
-
   constructor() {
     super({ enableCache: false })
   }
 
   /**
    * 生成URL-safe的挂载点ID
-   * 使用encodeURIComponent确保特殊字符不会导致ID冲突
    */
   private generateMountId(storageName: string, mountPath: string): string {
-    // 使用_作为分隔符，因为:可能在storageName或mountPath中出现
-    // encodeURIComponent处理特殊字符
     const encodedName = encodeURIComponent(storageName)
     const encodedPath = encodeURIComponent(mountPath)
     return `${encodedName}_${encodedPath}`
@@ -47,43 +44,53 @@ export class MountRepository extends BaseRepository<MountEntity> {
    */
   private parseMountId(id: string): { storageName: string; mountPath: string } | null {
     const separatorIndex = id.indexOf('_')
-    if (separatorIndex === -1) {
-      return null
-    }
+    if (separatorIndex === -1) return null
     try {
       const storageName = decodeURIComponent(id.substring(0, separatorIndex))
       const mountPath = decodeURIComponent(id.substring(separatorIndex + 1))
       return { storageName, mountPath }
     } catch {
-      // 解码失败，可能是旧格式的ID
       return null
     }
   }
 
+  /**
+   * 路径标准化
+   */
+  private normalizeMountPath(path: string): string {
+    if (!path) return path
+    let normalized = path.replace(/\\/g, '/')
+    if (normalized.length > 2 && normalized.endsWith('/') && !normalized.endsWith(':/')) {
+      normalized = normalized.slice(0, -1)
+    }
+    return normalized
+  }
+
+  // ==========================================
+  // CRUD 方法
+  // ==========================================
+
   async getAll(): Promise<MountEntity[]> {
-    await reupMount(true)
+    // 刷新挂载列表
+    await this.refreshMountList(true)
     
     return rcloneInfo.mountList.map(mount => ({
       id: this.generateMountId(mount.storageName, mount.mountPath),
       storageName: mount.storageName,
       mountPath: mount.mountPath,
-      status: 'mounted' as const,
+      status: 'mounted' as MountStatus,
       createdAt: mount.mountedTime || new Date(),
     }))
   }
 
   async getById(id: string): Promise<MountEntity | null> {
-    // 尝试解析ID
     const parsed = this.parseMountId(id)
     if (parsed) {
-      // 如果ID格式正确，直接查找匹配的storageName和mountPath
       const mounts = await this.getAll()
       return mounts.find(m => 
         m.storageName === parsed.storageName && m.mountPath === parsed.mountPath
       ) || null
     }
-    
-    // 如果ID格式解析失败，退回到直接比较ID
     const mounts = await this.getAll()
     return mounts.find(m => m.id === id) || null
   }
@@ -97,19 +104,33 @@ export class MountRepository extends BaseRepository<MountEntity> {
       )
     }
 
+    // 检查是否已存在配置
+    const normalizedPath = this.normalizeMountPath(entity.mountPath)
+    const existing = nmConfig.mount.lists.find(
+      item => this.normalizeMountPath(item.mountPath) === normalizedPath
+    )
+    if (existing) {
+      throw new RepositoryError(
+        'Mount configuration already exists',
+        ErrorCode.ALREADY_EXISTS,
+        'MountRepository'
+      )
+    }
+
+    // 添加挂载配置
     const mountInfo: MountListItem = {
       storageName: entity.storageName,
       mountPath: entity.mountPath,
       parameters: entity.parameters?.vfsOpt && entity.parameters?.mountOpt
-        ? {
-            vfsOpt: entity.parameters.vfsOpt,
-            mountOpt: entity.parameters.mountOpt,
-          }
+        ? { vfsOpt: entity.parameters.vfsOpt, mountOpt: entity.parameters.mountOpt }
         : { vfsOpt: {}, mountOpt: {} },
       autoMount: entity.autoMount ?? false,
     }
+    nmConfig.mount.lists.push(mountInfo)
+    await saveNmConfig()
 
-    await mountStorageService(mountInfo)
+    // 执行挂载
+    await this.performMount(mountInfo)
 
     const mount: MountEntity = {
       id: this.generateMountId(entity.storageName, entity.mountPath),
@@ -121,14 +142,8 @@ export class MountRepository extends BaseRepository<MountEntity> {
       createdAt: new Date(),
     }
 
-    this.notifyChange({
-      type: 'create',
-      id: mount.id,
-      newData: mount,
-      timestamp: new Date(),
-    })
-
-    this.mountLogger.info('Mount created', { id: mount.id })
+    this.notifyChange({ type: 'create', id: mount.id, newData: mount, timestamp: new Date() })
+    mountLogger.info('Mount created', { id: mount.id })
     return mount
   }
 
@@ -138,95 +153,67 @@ export class MountRepository extends BaseRepository<MountEntity> {
       throw new RepositoryError(`Mount ${id} not found`, ErrorCode.NOT_FOUND, 'MountRepository')
     }
 
-    // 构建新的挂载配置
-    const newStorageName = entity.storageName || oldMount.storageName
-    const newMountPath = entity.mountPath || oldMount.mountPath
-    const newParameters = entity.parameters || oldMount.parameters
-    const newAutoMount = entity.autoMount ?? oldMount.autoMount
-
-    // 如果关键配置没有变化，直接返回旧的（无需重新挂载）
-    if (
-      newStorageName === oldMount.storageName &&
-      newMountPath === oldMount.mountPath &&
-      this.deepEqual(newParameters, oldMount.parameters) &&
-      newAutoMount === oldMount.autoMount
-    ) {
-      this.mountLogger.info('Mount configuration unchanged, skipping update', { id })
-      return oldMount
+    // 找到配置索引
+    const normalizedPath = this.normalizeMountPath(oldMount.mountPath)
+    const configIndex = nmConfig.mount.lists.findIndex(
+      item => this.normalizeMountPath(item.mountPath) === normalizedPath
+    )
+    if (configIndex === -1) {
+      throw new RepositoryError('Mount configuration not found', ErrorCode.NOT_FOUND, 'MountRepository')
     }
 
-    // 原子性更新：先创建新挂载，成功后再删除旧挂载
-    this.mountLogger.info('Starting atomic mount update', { id, oldMountPath: oldMount.mountPath, newMountPath })
-
-    let newMount: MountEntity | null = null
-    let createSuccess = false
-
-    try {
-      // 1. 先尝试创建新挂载
-      newMount = await this.create({
-        storageName: newStorageName,
-        mountPath: newMountPath,
-        parameters: newParameters,
-        autoMount: newAutoMount,
-      })
-      createSuccess = true
-
-      // 2. 新挂载成功后，删除旧挂载
-      try {
-        await this.delete(id)
-      } catch (deleteError) {
-        // 旧挂载删除失败，记录警告但不影响整体成功状态
-        this.mountLogger.warn('Failed to delete old mount after update', {
-          id,
-          error: deleteError instanceof Error ? deleteError.message : String(deleteError),
-        })
-      }
-
-      this.notifyChange({
-        type: 'update',
-        id: newMount.id,
-        oldData: oldMount,
-        newData: newMount,
-        timestamp: new Date(),
-      })
-
-      this.mountLogger.info('Mount updated successfully', { id: newMount.id })
-      return newMount
-    } catch (error) {
-      // 如果创建新挂载失败，尝试回滚
-      if (createSuccess && newMount) {
-        try {
-          await unmountStorageService(newMount.mountPath)
-          this.mountLogger.info('Rolled back new mount after update failure', { mountPath: newMount.mountPath })
-        } catch (rollbackError) {
-          this.mountLogger.error('Failed to rollback new mount', rollbackError as Error, { mountPath: newMount.mountPath })
-        }
-      }
-
-      throw new RepositoryError(
-        `Failed to update mount: ${error instanceof Error ? error.message : String(error)}`,
-        ErrorCode.UNKNOWN,
-        'MountRepository'
-      )
+    // 更新配置
+    const oldConfig = nmConfig.mount.lists[configIndex]!
+    const oldParameters = oldConfig.parameters
+    const newParameters = entity.parameters?.vfsOpt && entity.parameters?.mountOpt
+      ? { vfsOpt: entity.parameters.vfsOpt, mountOpt: entity.parameters.mountOpt }
+      : oldParameters
+    const newConfig: MountListItem = {
+      storageName: entity.storageName ?? oldConfig.storageName,
+      mountPath: entity.mountPath ?? oldConfig.mountPath,
+      parameters: newParameters,
+      autoMount: entity.autoMount ?? oldConfig.autoMount,
     }
+    nmConfig.mount.lists[configIndex] = newConfig
+    await saveNmConfig()
+
+    // 如果关键路径变化，需要重新挂载
+    if (newConfig.mountPath !== oldMount.mountPath || newConfig.storageName !== oldMount.storageName) {
+      await this.performUnmount(oldMount.mountPath)
+      await this.performMount(newConfig)
+    }
+
+    const newMount: MountEntity = {
+      id: this.generateMountId(newConfig.storageName, newConfig.mountPath),
+      storageName: newConfig.storageName,
+      mountPath: newConfig.mountPath,
+      parameters: newConfig.parameters,
+      autoMount: newConfig.autoMount,
+      status: 'mounted',
+      createdAt: oldMount.createdAt,
+    }
+
+    this.notifyChange({ type: 'update', id: newMount.id, oldData: oldMount, newData: newMount, timestamp: new Date() })
+    mountLogger.info('Mount updated', { id: newMount.id })
+    return newMount
   }
 
   async delete(id: string): Promise<boolean> {
     const oldMount = await this.getById(id)
-    if (!oldMount) {
-      return false
-    }
+    if (!oldMount) return false
 
-    await unmountStorageService(oldMount.mountPath)
+    // 先卸载
+    await this.performUnmount(oldMount.mountPath)
 
-    this.notifyChange({
-      type: 'delete',
-      id,
-      oldData: oldMount,
-      timestamp: new Date(),
-    })
+    // 删除配置
+    const normalizedPath = this.normalizeMountPath(oldMount.mountPath)
+    nmConfig.mount.lists = nmConfig.mount.lists.filter(
+      item => this.normalizeMountPath(item.mountPath) !== normalizedPath
+    )
+    await saveNmConfig()
 
-    this.mountLogger.info('Mount deleted', { id })
+    this.notifyChange({ type: 'delete', id, oldData: oldMount, timestamp: new Date() })
+    mountLogger.info('Mount deleted', { id })
     return true
   }
 
@@ -235,92 +222,167 @@ export class MountRepository extends BaseRepository<MountEntity> {
     return mount !== null
   }
 
-  async mountStorage(
-    storageName: string,
-    mountPath: string,
-    parameters?: { vfsOpt?: VfsOptions; mountOpt?: MountOptions }
-  ): Promise<MountEntity> {
-    return this.create({
-      storageName,
-      mountPath,
-      parameters,
+  // ==========================================
+  // 业务方法
+  // ==========================================
+
+  /**
+   * 刷新挂载列表（从 rclone 获取）
+   */
+  async refreshMountList(noRefreshUI?: boolean): Promise<void> {
+    const response = await rclone_api_post('/mount/listmounts')
+    
+    if (!response || !isMountListResponse(response)) {
+      mountLogger.warn('Invalid mount list response format', { response })
+      rcloneInfo.mountList = []
+      useMountStore.getState().setMountList([])
+      !noRefreshUI && hooks.upMount()
+      return
+    }
+    
+    const mountPoints = response.mountPoints
+    rcloneInfo.mountList = []
+    const newMountList: MountList[] = []
+
+    mountPoints.forEach((item) => {
+      const mountItem: MountList = {
+        storageName: item.fs,
+        mountPath: item.mountPoint,
+        mountedTime: new Date(item.mountedOn),
+      }
+      rcloneInfo.mountList.push(mountItem)
+      newMountList.push(mountItem)
     })
+    
+    useMountStore.getState().setMountList(newMountList)
+    !noRefreshUI && hooks.upMount()
   }
 
-  async unmountStorage(mountId: string): Promise<boolean> {
-    return this.delete(mountId)
+  /**
+   * 检查挂载点是否已挂载
+   */
+  async isMounted(mountPath: string): Promise<boolean> {
+    await this.refreshMountList(true)
+    return rcloneInfo.mountList.findIndex(item => item.mountPath === mountPath) !== -1
   }
 
-  async getMountStatus(mountId: string): Promise<MountStatus> {
-    const mount = await this.getById(mountId)
-    return mount?.status || 'unmounted'
+  /**
+   * 获取挂载配置
+   */
+  getMountConfig(mountPath: string): MountListItem | undefined {
+    const normalized = this.normalizeMountPath(mountPath)
+    return nmConfig.mount.lists.find(item => this.normalizeMountPath(item.mountPath) === normalized)
   }
 
-  async getActiveMounts(): Promise<MountEntity[]> {
-    const mounts = await this.getAll()
-    return mounts.filter(m => m.status === 'mounted')
+  /**
+   * 执行挂载操作
+   */
+  private async performMount(mountInfo: MountListItem): Promise<void> {
+    // 非 Windows 系统需要创建目录
+    if (!rcloneInfo.version.os.toLowerCase().includes('windows')) {
+      if (!(await fs_exist_dir(mountInfo.mountPath))) {
+        await fs_make_dir(mountInfo.mountPath)
+      }
+    }
+
+    await rclone_api_post('/mount/mount', {
+      fs: convertStoragePath(mountInfo.storageName) || mountInfo.storageName,
+      mountPoint: mountInfo.mountPath,
+      ...mountInfo.parameters,
+    })
+
+    await this.refreshMountList()
   }
 
-  async getMountsByStorage(storageName: string): Promise<MountEntity[]> {
-    const mounts = await this.getAll()
-    return mounts.filter(m => m.storageName === storageName)
+  /**
+   * 执行卸载操作
+   */
+  private async performUnmount(mountPath: string): Promise<void> {
+    await rclone_api_post('/mount/unmount', { mountPoint: mountPath })
+    await this.refreshMountList()
   }
 
-  async isMountPointMounted(mountPath: string): Promise<boolean> {
-    return isMounted(mountPath)
-  }
+  // ==========================================
+  // 公开 API（供 Controller 使用）
+  // ==========================================
 
+  /**
+   * 添加挂载配置（不立即挂载）
+   */
   async addMountConfig(
     storageName: string,
     mountPath: string,
     parameters: { vfsOpt: VfsOptions; mountOpt: MountOptions },
     autoMount?: boolean
   ): Promise<boolean> {
-    return addMountStorage(storageName, mountPath, parameters, autoMount)
-  }
+    const normalizedPath = this.normalizeMountPath(mountPath)
+    if (nmConfig.mount.lists.some(item => this.normalizeMountPath(item.mountPath) === normalizedPath)) {
+      return false
+    }
 
-  async deleteMountConfig(mountPath: string): Promise<void> {
-    await delMountStorage(mountPath)
+    const mountInfo: MountListItem = {
+      storageName,
+      mountPath,
+      parameters,
+      autoMount: autoMount ?? false,
+    }
+    nmConfig.mount.lists.push(mountInfo)
+    await saveNmConfig()
+    await this.refreshMountList()
+    return true
   }
 
   /**
-   * 深度比较两个值是否相等
-   * 支持对象、数组、基本类型的比较
+   * 删除挂载配置（会先卸载）
    */
-  private deepEqual(a: unknown, b: unknown): boolean {
-    // 处理null和undefined
-    if (a === b) return true
-    if (a == null || b == null) return a === b
-    if (typeof a !== typeof b) return false
+  async deleteMountConfig(mountPath: string): Promise<void> {
+    if (await this.isMounted(mountPath)) {
+      await this.performUnmount(mountPath)
+    }
 
-    // 处理基本类型
-    if (typeof a !== 'object') return a === b
+    const normalizedPath = this.normalizeMountPath(mountPath)
+    nmConfig.mount.lists = nmConfig.mount.lists.filter(
+      item => this.normalizeMountPath(item.mountPath) !== normalizedPath
+    )
+    await saveNmConfig()
+    await this.refreshMountList()
+  }
 
-    // 处理数组
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) return false
-      for (let i = 0; i < a.length; i++) {
-        if (!this.deepEqual(a[i], b[i])) return false
+  /**
+   * 挂载存储
+   */
+  async mountStorage(mountInfo: MountListItem): Promise<void> {
+    await this.performMount(mountInfo)
+  }
+
+  /**
+   * 卸载存储
+   */
+  async unmountStorage(mountPath: string): Promise<void> {
+    await this.performUnmount(mountPath)
+  }
+
+  /**
+   * 编辑挂载配置
+   */
+  async editMountConfig(mountInfo: MountListItem, oldMountPath?: string): Promise<void> {
+    const searchPath = oldMountPath || mountInfo.mountPath
+    const normalizedSearch = this.normalizeMountPath(searchPath)
+    
+    let found = false
+    for (let i = 0; i < nmConfig.mount.lists.length; i++) {
+      if (this.normalizeMountPath(nmConfig.mount.lists[i]!.mountPath) === normalizedSearch) {
+        nmConfig.mount.lists[i] = mountInfo
+        found = true
+        break
       }
-      return true
     }
 
-    // 处理对象
-    if (Array.isArray(a) || Array.isArray(b)) return false
-
-    const objA = a as Record<string, unknown>
-    const objB = b as Record<string, unknown>
-    const keysA = Object.keys(objA)
-    const keysB = Object.keys(objB)
-
-    if (keysA.length !== keysB.length) return false
-
-    for (const key of keysA) {
-      if (!keysB.includes(key)) return false
-      if (!this.deepEqual(objA[key], objB[key])) return false
+    if (!found) {
+      nmConfig.mount.lists.push(mountInfo)
     }
 
-    return true
+    await saveNmConfig()
   }
 }
 

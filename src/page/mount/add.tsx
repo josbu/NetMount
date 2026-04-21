@@ -483,7 +483,8 @@ export default function AddMount_page() {
                   title: t('success'),
                   content: t('save_successfully'),
                 })
-              } else if (await mountStorage(getMountStorage(mountPathTemp)!)) {
+              } else {
+                await mountStorage(getMountStorage(mountPathTemp)!)
                 Notification.success({
                   title: t('success'),
                   content: t('mount_storage_successfully'),

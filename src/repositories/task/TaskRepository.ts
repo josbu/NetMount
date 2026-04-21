@@ -2,61 +2,91 @@
  * TaskRepository - 任务数据访问层
  * 
  * 封装任务相关的数据访问操作
- * 当前实现：调用现有Service层
+ * 重构：直接操作 nmConfig.task，不再依赖 Controller 层
  */
 
 import { BaseRepository } from '../base/BaseRepository'
 import { RepositoryError, ErrorCode } from '../interfaces/IRepository'
 import { logger } from '../../services/LoggerService'
-import {
-  saveTask as saveTaskService,
-  delTask as delTaskService,
-  taskScheduler,
-  startTaskScheduler,
-} from '../../controller/task/task'
+import { nmConfig, saveNmConfig } from '../../services/ConfigService'
 import { runTask } from '../../controller/task/runner'
-import { nmConfig } from '../../services/ConfigService'
-import type {
-  TaskEntity,
-  TaskStatus,
-  TaskResult,
-  TaskStats,
-} from '../../type/task/task'
+import type { TaskEntity, TaskStatus, TaskResult, TaskStats } from '../../type/task/task'
 import type { TaskListItem } from '../../type/config'
+
+const taskLogger = logger.withContext('TaskRepository')
+
+// TaskScheduler 类型定义（从 scheduler.ts）
+interface TaskSchedulerLike {
+  addTask(task: TaskListItem): Promise<void>
+  cancelTask(taskName: string): void
+}
+
+// 动态导入 TaskScheduler 避免循环依赖
+let _taskScheduler: TaskSchedulerLike | null = null
+async function getTaskScheduler(): Promise<TaskSchedulerLike> {
+  if (!_taskScheduler) {
+    const { TaskScheduler } = await import('../../controller/task/scheduler')
+    _taskScheduler = new TaskScheduler()
+  }
+  return _taskScheduler
+}
 
 /**
  * TaskRepository 类
  */
 export class TaskRepository extends BaseRepository<TaskEntity> {
-  private taskLogger = logger.withContext('TaskRepository')
-
   constructor() {
     super({ enableCache: false })
   }
 
   /**
-   * 获取所有任务
+   * 将 TaskListItem 转换为 TaskEntity
    */
+  private taskListItemToEntity(task: TaskListItem): TaskEntity {
+    return {
+      id: task.name,
+      name: task.name,
+      taskType: task.taskType,
+      source: task.source,
+      target: task.target,
+      parameters: task.parameters,
+      enable: task.enable,
+      run: {
+        ...task.run,
+        mode: task.run.mode as 'time' | 'interval' | 'start' | 'disposable',
+      },
+      runInfo: task.runInfo,
+      status: task.run.runId ? 'running' : 'pending',
+    }
+  }
+
+  // ==========================================
+  // CRUD 方法
+  // ==========================================
+
   async getAll(): Promise<TaskEntity[]> {
     return nmConfig.task.map(task => this.taskListItemToEntity(task))
   }
 
-  /**
-   * 根据ID获取任务
-   */
   async getById(id: string): Promise<TaskEntity | null> {
     const task = nmConfig.task.find(t => t.name === id)
     return task ? this.taskListItemToEntity(task) : null
   }
 
-  /**
-   * 创建任务
-   */
   async create(entity: Partial<TaskEntity>): Promise<TaskEntity> {
     if (!entity.name || !entity.taskType || !entity.source || !entity.target) {
       throw new RepositoryError(
         'Missing required fields: name, taskType, source, or target',
         ErrorCode.INVALID_DATA,
+        'TaskRepository'
+      )
+    }
+
+    // 检查是否已存在同名任务
+    if (nmConfig.task.some(t => t.name === entity.name)) {
+      throw new RepositoryError(
+        'Task with this name already exists',
+        ErrorCode.ALREADY_EXISTS,
         'TaskRepository'
       )
     }
@@ -75,40 +105,28 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
       runInfo: entity.runInfo ?? {},
     }
 
-    await saveTaskService(taskListItem)
+    nmConfig.task.push(taskListItem)
+    await saveNmConfig()
 
-    const task = await this.getById(entity.name)
-    if (!task) {
-      throw new RepositoryError(
-        'Task created but not found',
-        ErrorCode.UNKNOWN,
-        'TaskRepository'
-      )
+    // 如果不是立即执行模式，添加到调度器
+    if (taskListItem.run.mode !== 'start') {
+      const scheduler = await getTaskScheduler()
+      await scheduler.addTask(taskListItem)
     }
 
-    this.notifyChange({
-      type: 'create',
-      id: task.id,
-      newData: task,
-      timestamp: new Date(),
-    })
-
-    this.taskLogger.info('Task created', { id: task.id })
+    const task = this.taskListItemToEntity(taskListItem)
+    this.notifyChange({ type: 'create', id: task.id, newData: task, timestamp: new Date() })
+    taskLogger.info('Task created', { id: task.id })
     return task
   }
 
-  /**
-   * 更新任务
-   *
-   * 就地更新任务配置，保留运行时数据(runInfo)和调度状态
-   */
   async update(id: string, entity: Partial<TaskEntity>): Promise<TaskEntity> {
     const oldTask = await this.getById(id)
     if (!oldTask) {
       throw new RepositoryError(`Task ${id} not found`, ErrorCode.NOT_FOUND, 'TaskRepository')
     }
 
-    // 如果ID改变，需要特殊处理
+    // 不允许更改任务名称
     if (entity.name && entity.name !== id) {
       throw new RepositoryError(
         'Cannot change task name, please delete and recreate',
@@ -117,90 +135,71 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
       )
     }
 
-    // 找到原始配置
     const taskIndex = nmConfig.task.findIndex(t => t.name === id)
     if (taskIndex === -1) {
-      throw new RepositoryError(
-        'Task configuration not found',
-        ErrorCode.NOT_FOUND,
-        'TaskRepository'
-      )
+      throw new RepositoryError('Task configuration not found', ErrorCode.NOT_FOUND, 'TaskRepository')
     }
 
     const oldTaskListItem = nmConfig.task[taskIndex]!
 
-    // 构建更新的任务配置（保留未改变的字段）
+    // 构建更新后的配置
     const updatedTaskListItem: TaskListItem = {
-      name: id, // name 不变
+      name: id,
       taskType: entity.taskType ?? oldTaskListItem.taskType,
       source: entity.source ?? oldTaskListItem.source,
       target: entity.target ?? oldTaskListItem.target,
       parameters: entity.parameters ?? oldTaskListItem.parameters,
       enable: entity.enable ?? oldTaskListItem.enable,
-      // run配置：如果提供了新的run配置则合并
-      run: entity.run
-        ? { ...oldTaskListItem.run, ...entity.run }
-        : oldTaskListItem.run,
-      // 保留运行时信息（除非明确提供）
+      run: entity.run ? { ...oldTaskListItem.run, ...entity.run } : oldTaskListItem.run,
       runInfo: entity.runInfo ?? oldTaskListItem.runInfo,
     }
 
-    // 保存更新后的配置
-    nmConfig.task[taskIndex] = updatedTaskListItem
-    await saveTaskService(updatedTaskListItem)
-
-    // 转换回实体
-    const newTask = this.taskListItemToEntity(updatedTaskListItem)
-
-    // 如果状态被显式更新，使用更新后的状态
-    if (entity.status) {
-      newTask.status = entity.status
+    // 如果有运行ID，取消旧任务
+    if (updatedTaskListItem.run.runId) {
+      const scheduler = await getTaskScheduler()
+      scheduler.cancelTask(id)
     }
 
-    this.notifyChange({
-      type: 'update',
-      id,
-      oldData: oldTask,
-      newData: newTask,
-      timestamp: new Date(),
-    })
+    nmConfig.task[taskIndex] = updatedTaskListItem
+    await saveNmConfig()
 
-    this.taskLogger.info('Task updated', { id })
+    // 如果调度模式变更，更新调度器
+    if (updatedTaskListItem.run.mode !== 'start') {
+      const scheduler = await getTaskScheduler()
+      await scheduler.addTask(updatedTaskListItem)
+    }
+
+    const newTask = this.taskListItemToEntity(updatedTaskListItem)
+    if (entity.status) newTask.status = entity.status
+
+    this.notifyChange({ type: 'update', id, oldData: oldTask, newData: newTask, timestamp: new Date() })
+    taskLogger.info('Task updated', { id })
     return newTask
   }
 
-  /**
-   * 删除任务
-   */
   async delete(id: string): Promise<boolean> {
     const oldTask = await this.getById(id)
-    if (!oldTask) {
-      return false
-    }
+    if (!oldTask) return false
 
-    await delTaskService(id)
+    // 取消调度
+    const scheduler = await getTaskScheduler()
+    scheduler.cancelTask(id)
 
-    this.notifyChange({
-      type: 'delete',
-      id,
-      oldData: oldTask,
-      timestamp: new Date(),
-    })
+    // 从配置中删除
+    nmConfig.task = nmConfig.task.filter(t => t.name !== id)
+    await saveNmConfig()
 
-    this.taskLogger.info('Task deleted', { id })
+    this.notifyChange({ type: 'delete', id, oldData: oldTask, timestamp: new Date() })
+    taskLogger.info('Task deleted', { id })
     return true
   }
 
-  /**
-   * 检查任务是否存在
-   */
   async exists(id: string): Promise<boolean> {
-    const task = await this.getById(id)
-    return task !== null
+    return nmConfig.task.some(t => t.name === id)
   }
 
   // ==========================================
-  // 任务操作方法
+  // 业务方法
   // ==========================================
 
   /**
@@ -212,50 +211,39 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
       throw new RepositoryError('Task not found', ErrorCode.NOT_FOUND, 'TaskRepository')
     }
 
-    this.taskLogger.info('Executing task', { taskId })
-
+    taskLogger.info('Executing task', { taskId })
     const startTime = Date.now()
+
+    // 更新状态为 running
     await this.update(taskId, { status: 'running' })
 
     try {
-      // 获取原始任务配置
       const taskListItem = nmConfig.task.find(t => t.name === taskId)
       if (!taskListItem) {
         throw new RepositoryError('Task configuration not found', ErrorCode.NOT_FOUND, 'TaskRepository')
       }
 
-      // 执行实际任务
       const result = await runTask(taskListItem)
-
       const duration = Date.now() - startTime
+
       const taskResult: TaskResult = {
         success: !result.runInfo?.error,
-        transferredFiles: 0, // 需要从实际执行结果获取
+        transferredFiles: 0,
         transferredBytes: 0,
         errors: result.runInfo?.error ? 1 : 0,
         duration,
         errorMessages: result.runInfo?.msg ? [result.runInfo.msg] : undefined,
       }
 
-      await this.update(taskId, {
-        status: taskResult.success ? 'completed' : 'failed',
-      })
+      await this.update(taskId, { status: taskResult.success ? 'completed' : 'failed' })
+      taskLogger.info('Task execution completed', { taskId, success: taskResult.success, duration })
 
-      this.taskLogger.info('Task execution completed', { 
-        taskId, 
-        success: taskResult.success,
-        duration: `${duration}ms`,
-      })
-      
       return taskResult
     } catch (error) {
       const duration = Date.now() - startTime
-      await this.update(taskId, {
-        status: 'failed',
-      })
+      await this.update(taskId, { status: 'failed' })
+      taskLogger.error('Task execution failed', error as Error, { taskId, duration })
 
-      this.taskLogger.error('Task execution failed', error as Error, { taskId, duration })
-      
       return {
         success: false,
         transferredFiles: 0,
@@ -271,9 +259,10 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
    * 取消任务
    */
   async cancelTask(taskId: string): Promise<boolean> {
-    await taskScheduler.cancelTask(taskId)
+    const scheduler = await getTaskScheduler()
+    scheduler.cancelTask(taskId)
     await this.update(taskId, { status: 'cancelled' })
-    this.taskLogger.info('Task cancelled', { taskId })
+    taskLogger.info('Task cancelled', { taskId })
     return true
   }
 
@@ -306,7 +295,6 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
    */
   async getTaskStats(): Promise<TaskStats> {
     const tasks = await this.getAll()
-
     return {
       totalTasks: tasks.length,
       pendingTasks: tasks.filter(t => !t.status || t.status === 'pending').length,
@@ -317,45 +305,64 @@ export class TaskRepository extends BaseRepository<TaskEntity> {
     }
   }
 
-    /**
+  /**
    * 启动任务调度器
    */
   async startScheduler(): Promise<void> {
-    await startTaskScheduler()
-    this.taskLogger.info('Task scheduler started')
-  }
-
-  /**
-   * 销毁资源
-   */
-  destroy(): void {
-    // 清理资源
-    this.taskLogger.info('TaskRepository destroyed')
-  }
-
-  // ==========================================
-  // 私有辅助方法
-  // ==========================================
-
-  /**
-   * 将TaskListItem转换为TaskEntity
-   */
-  private taskListItemToEntity(task: TaskListItem): TaskEntity {
-    return {
-      id: task.name,
-      name: task.name,
-      taskType: task.taskType,
-      source: task.source,
-      target: task.target,
-      parameters: task.parameters,
-      enable: task.enable,
-      run: {
-        ...task.run,
-        mode: task.run.mode as 'time' | 'interval' | 'start' | 'disposable',
-      },
-      runInfo: task.runInfo,
-      status: task.run.runId ? 'running' : 'pending',
+    for (const task of nmConfig.task) {
+      const scheduler = await getTaskScheduler()
+      await scheduler.addTask(task)
     }
+    taskLogger.info('Task scheduler started')
+  }
+
+  // ==========================================
+  // 公开 API（供 Controller 使用）
+  // ==========================================
+
+  /**
+   * 保存任务配置（兼容旧接口）
+   */
+  async saveTaskConfig(taskInfo: TaskListItem): Promise<boolean> {
+    const existingIndex = nmConfig.task.findIndex(task => task.name === taskInfo.name)
+
+    if (existingIndex !== -1) {
+      // 存在同名任务，更新
+      if (taskInfo.run.runId) {
+        const scheduler = await getTaskScheduler()
+        scheduler.cancelTask(taskInfo.name)
+      }
+      nmConfig.task[existingIndex] = taskInfo
+    } else {
+      // 新任务，添加
+      nmConfig.task.push(taskInfo)
+    }
+
+    if (taskInfo.run.mode !== 'start') {
+      const scheduler = await getTaskScheduler()
+      await scheduler.addTask(taskInfo)
+    }
+
+    await saveNmConfig()
+    return true
+  }
+
+  /**
+   * 删除任务配置（兼容旧接口）
+   */
+  async deleteTaskConfig(taskName: string): Promise<boolean> {
+    const scheduler = await getTaskScheduler()
+    scheduler.cancelTask(taskName)
+    nmConfig.task = nmConfig.task.filter(task => task.name !== taskName)
+    await saveNmConfig()
+    return true
+  }
+
+  /**
+   * 获取 TaskScheduler 实例（兼容旧接口）
+   */
+  async getScheduler(): Promise<TaskSchedulerLike> {
+    return getTaskScheduler()
   }
 }
 

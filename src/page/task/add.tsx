@@ -395,7 +395,7 @@ function AddTask_page() {
                   content: t('same_source_and_target'),
                 })
               } else {
-                if (saveTask(taskInfo)) {
+                if (await saveTask(taskInfo)) {
                   Notification.success({
                     title: t('success'),
                     content: t('task_added_successfully'),

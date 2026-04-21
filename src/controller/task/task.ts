@@ -1,42 +1,58 @@
-import { nmConfig, saveNmConfig } from '../../services/ConfigService'
+/**
+ * Task Controller - 任务操作控制器
+ * 
+ * 重构：调用 taskRepository，而不是直接操作 nmConfig
+ * 保持向后兼容的导出接口
+ */
+
+import { taskRepository } from '../../repositories/task/TaskRepository'
 import { TaskListItem } from '../../type/config'
-import { TaskScheduler } from './scheduler'
 
-const taskScheduler = new TaskScheduler()
+// ==========================================
+// 向后兼容的导出接口
+// ==========================================
 
-function saveTask(taskInfo: TaskListItem) {
-  const existingTaskIndex = nmConfig.task.findIndex(task => task.name === taskInfo.name)
-
-  if (existingTaskIndex !== -1) {
-    // 存在同名任务，更新已有任务
-    if (taskInfo.run.runId) {
-      taskScheduler.cancelTask(taskInfo.name)
-    }
-    nmConfig.task[existingTaskIndex] = taskInfo
-  } else {
-    // 不存在同名任务，直接添加新任务
-    nmConfig.task.push(taskInfo)
-  }
-  if (taskInfo.run.mode !== 'start') {
-    taskScheduler.addTask(taskInfo)
-  }
-
-  saveNmConfig()
-  return true
+/**
+ * 保存任务配置
+ */
+async function saveTask(taskInfo: TaskListItem): Promise<boolean> {
+  return taskRepository.saveTaskConfig(taskInfo)
 }
 
-function delTask(taskName: string) {
-  taskScheduler.cancelTask(taskName)
-  nmConfig.task = nmConfig.task.filter(task => task.name !== taskName)
-
-  saveNmConfig()
-  return true
+/**
+ * 删除任务
+ */
+async function delTask(taskName: string): Promise<boolean> {
+  return taskRepository.deleteTaskConfig(taskName)
 }
 
-async function startTaskScheduler() {
-  for (const task of nmConfig.task) {
-    await taskScheduler.addTask(task)
-  }
+/**
+ * 启动任务调度器
+ */
+async function startTaskScheduler(): Promise<void> {
+  await taskRepository.startScheduler()
 }
+
+/**
+ * TaskScheduler 兼容对象
+ * 用于需要 cancelTask 等方法的场景
+ */
+const taskScheduler = {
+  cancelTask: (taskName: string) => {
+    // 同步版本，直接从 Repository 获取 scheduler
+    taskRepository.getScheduler().then(s => s.cancelTask(taskName))
+  },
+  addTask: async (task: TaskListItem) => {
+    const scheduler = await taskRepository.getScheduler()
+    await scheduler.addTask(task)
+  },
+  executeTask: async (taskId: string) => {
+    return taskRepository.executeTask(taskId)
+  },
+}
+
+// ==========================================
+// 导出（向后兼容）
+// ==========================================
 
 export { saveTask, delTask, taskScheduler, startTaskScheduler }

@@ -133,7 +133,7 @@ function Task_page() {
 
                       <Button
                         onClick={() => {
-                          taskScheduler.executeTask(taskItem)
+                          taskScheduler.executeTask(taskItem.name)
                           setTimeout(() => {
                             incrementTask()
                           }, 200)

@@ -1,156 +1,96 @@
+/**
+ * Mount Controller - 挂载操作控制器
+ * 
+ * 重构：调用 mountRepository，而不是直接操作 nmConfig
+ * 保持向后兼容的导出接口
+ */
+
 import { invoke } from '@tauri-apps/api/core'
-import { nmConfig, saveNmConfig } from '../../../services/ConfigService'
-import { hooks } from '../../../services/hook'
-import { rcloneInfo } from '../../../services/rclone'
+import { mountRepository } from '../../../repositories/mount/MountRepository'
 import { MountListItem } from '../../../type/config'
-import { rclone_api_post } from '../../../utils/rclone/request'
-import { fs_exist_dir, fs_make_dir } from '../../../utils'
-import { convertStoragePath } from '../../../services/storage/StorageManager'
-import {
+
+import type {
   MountOptions,
   VfsOptions,
 } from '../../../type/rclone/storage/mount/parameters'
-import { isMountListResponse } from '../../../type/rclone/api'
-import { logger } from '../../../services/LoggerService'
-import { useMountStore } from '../../../stores/mountStore'
-import type { MountList } from '../../../type/rclone/rcloneInfo'
 
+// ==========================================
+// 向后兼容的导出接口
+// ==========================================
+
+/**
+ * 刷新挂载列表
+ */
 async function reupMount(noRefreshUI?: boolean) {
-  const response = await rclone_api_post('/mount/listmounts')
-  
-  if (!response || !isMountListResponse(response)) {
-    logger.warn('Invalid mount list response format', 'Mount', { response })
-    rcloneInfo.mountList = []
-    useMountStore.getState().setMountList([])
-    !noRefreshUI && hooks.upMount()
-    return
-  }
-  
-  const mountPoints = response.mountPoints
-
-  rcloneInfo.mountList = []
-  const newMountList: MountList[] = []
-
-  mountPoints.forEach((item) => {
-    const name = item.fs
-    const mountItem: MountList = {
-      storageName: name,
-      mountPath: item.mountPoint,
-      mountedTime: new Date(item.mountedOn),
-    }
-    rcloneInfo.mountList.push(mountItem)
-    newMountList.push(mountItem)
-  })
-  
-  useMountStore.getState().setMountList(newMountList)
-  !noRefreshUI && hooks.upMount()
+  await mountRepository.refreshMountList(noRefreshUI)
 }
 
-function normalizeMountPath(path: string): string {
-  if (!path) return path
-  let normalized = path.replace(/\\/g, '/')
-  if (normalized.length > 2 && normalized.endsWith('/') && !normalized.endsWith(':/')) {
-    normalized = normalized.slice(0, -1)
-  }
-  return normalized
-}
-
+/**
+ * 获取挂载配置
+ */
 function getMountStorage(mountPath: string): MountListItem | undefined {
-  const normalizedSearch = normalizeMountPath(mountPath)
-  return nmConfig.mount.lists.find(item => normalizeMountPath(item.mountPath) === normalizedSearch)
+  return mountRepository.getMountConfig(mountPath)
 }
 
+/**
+ * 检查是否已挂载
+ */
 function isMounted(mountPath: string): boolean {
-  return rcloneInfo.mountList.findIndex(item => item.mountPath === mountPath) !== -1
+  // 同步版本，用于 UI 判断
+  const mountList = mountRepository.getMountConfig(mountPath)
+  return mountList !== undefined
 }
 
+/**
+ * 添加挂载配置
+ */
 async function addMountStorage(
   storageName: string,
   mountPath: string,
   parameters: { vfsOpt: VfsOptions; mountOpt: MountOptions },
   autoMount?: boolean
 ): Promise<boolean> {
-  if (getMountStorage(mountPath)) {
-    return false
-  }
-
-  const mountInfo: MountListItem = {
-    storageName: storageName,
-    mountPath: mountPath,
-    parameters: parameters,
-    autoMount: autoMount || false,
-  }
-  nmConfig.mount.lists.push(mountInfo)
-
-  await saveNmConfig()
-  await reupMount()
-  return true
+  return mountRepository.addMountConfig(storageName, mountPath, parameters, autoMount)
 }
 
+/**
+ * 删除挂载配置
+ */
 async function delMountStorage(mountPath: string) {
-  if (isMounted(mountPath)) {
-    await unmountStorage(mountPath)
-  }
-
-  nmConfig.mount.lists.forEach((item, index) => {
-    if (item.mountPath === mountPath) {
-      nmConfig.mount.lists.splice(index, 1)
-    }
-  })
-
-  await saveNmConfig()
-  await reupMount()
+  await mountRepository.deleteMountConfig(mountPath)
 }
 
+/**
+ * 编辑挂载配置
+ */
 async function editMountStorage(mountInfo: MountListItem, oldMountPath?: string) {
-  const searchPath = oldMountPath || mountInfo.mountPath
-
-  let found = false
-  const normalizedSearch = normalizeMountPath(searchPath)
-  for (let i = 0; i < nmConfig.mount.lists.length; i++) {
-    if (normalizeMountPath(nmConfig.mount.lists[i]!.mountPath) === normalizedSearch) {
-      nmConfig.mount.lists[i] = mountInfo
-      found = true
-      break
-    }
-  }
-
-  if (!found) {
-    nmConfig.mount.lists.push(mountInfo)
-  }
-
-  await saveNmConfig()
+  await mountRepository.editMountConfig(mountInfo, oldMountPath)
 }
 
+/**
+ * 挂载存储
+ */
 async function mountStorage(mountInfo: MountListItem) {
-  if (
-    !rcloneInfo.version.os.toLowerCase().includes('windows') &&
-    !(await fs_exist_dir(mountInfo.mountPath))
-  ) {
-    await fs_make_dir(mountInfo.mountPath)
-  }
-
-  const back = await rclone_api_post('/mount/mount', {
-    fs: convertStoragePath(mountInfo.storageName) || mountInfo.storageName,
-    mountPoint: mountInfo.mountPath,
-    ...mountInfo.parameters,
-  })
-
-  await reupMount()
-  return back
+  await mountRepository.mountStorage(mountInfo)
 }
 
+/**
+ * 卸载存储
+ */
 async function unmountStorage(mountPath: string) {
-  await rclone_api_post('/mount/unmount', {
-    mountPoint: mountPath,
-  })
-
-  await reupMount()
+  await mountRepository.unmountStorage(mountPath)
 }
 
+/**
+ * 获取可用驱动器字母（Windows）
+ */
 async function getAvailableDriveLetter(): Promise<string> {
   return await invoke('get_available_drive_letter')
 }
+
+// ==========================================
+// 导出（向后兼容）
+// ==========================================
 
 export {
   reupMount,
