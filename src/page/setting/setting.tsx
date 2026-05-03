@@ -23,7 +23,7 @@ export default function Setting_page() {
   const showLogFromFileTail = async (path: string) => {
     try {
       const content = await readTextFileTail(path, { maxBytes: 256 * 1024, allowMissing: true })
-      showLog(modal, (content || '').trim() ? content : '暂无日志')
+      showLog(modal, (content || '').trim() ? content : t('no_logs'))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       Message.error(msg)

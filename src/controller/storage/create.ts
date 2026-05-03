@@ -1,4 +1,5 @@
 import { Message } from '@arco-design/web-react'
+import { t } from 'i18next'
 import { ParametersType } from '../../type/defaults'
 import { openlist_api_post } from '../../utils/openlist/request'
 import { rclone_api_post } from '../../utils/rclone/request'
@@ -12,17 +13,16 @@ import { logger } from '../../services/LoggerService'
  */
 function validateStorageName(name: string): string | null {
   if (!name || typeof name !== 'string') {
-    return '存储名称不能为空'
+    return t('validation_storage_name_empty')
   }
   if (name.trim().length === 0) {
-    return '存储名称不能为空'
+    return t('validation_storage_name_empty')
   }
   if (name.length > 128) {
-    return '存储名称长度不能超过128字符'
+    return t('validation_storage_name_too_long')
   }
-  // 检查非法字符
   if (/[<>:"|?*/\\]/.test(name)) {
-    return '存储名称包含非法字符'
+    return t('validation_storage_name_invalid_chars')
   }
   return null
 }
@@ -32,7 +32,7 @@ function validateStorageName(name: string): string | null {
  */
 function validateStorageType(type: string): string | null {
   if (!type || typeof type !== 'string') {
-    return '存储类型不能为空'
+    return t('validation_storage_type_empty')
   }
   return null
 }
@@ -42,7 +42,7 @@ function validateStorageType(type: string): string | null {
  */
 function validateParameters(parameters: ParametersType): string | null {
   if (!parameters || typeof parameters !== 'object') {
-    return '存储参数不能为空'
+    return t('validation_storage_params_empty')
   }
   return null
 }
@@ -77,14 +77,14 @@ async function createStorage(
   // 输入验证
   const validation = validateStorageInput(name, type, parameters)
   if (!validation.valid) {
-    Message.error(validation.error || '输入参数无效')
+    Message.error(validation.error || t('validation_input_invalid'))
     logger.error('Storage validation failed', undefined, 'StorageCreate', { error: validation.error })
     return false
   }
 
   const storageInfo = searchStorageInfo(type)
   if (!storageInfo) {
-    Message.error('不支持的存储类型: ' + type)
+    Message.error(t('error_unsupported_storage_type') + ': ' + type)
     logger.error('Storage type not found', undefined, 'StorageCreate', { type })
     return false
   }
@@ -117,7 +117,7 @@ async function createStorage(
           serializedAddition = JSON.stringify(parameters.addition)
         } catch (e) {
           logger.error('Failed to serialize addition', e as Error, 'StorageCreate')
-          Message.error('存储参数序列化失败')
+          Message.error(t('error_storage_params_serialization'))
           return false
         }
 
@@ -135,7 +135,7 @@ async function createStorage(
           // 更新现有存储
           const storageId = storage.other?.openlist?.id
           if (!storageId) {
-            Message.error('无法获取存储 ID')
+            Message.error(t('error_storage_id_not_found'))
             return false
           }
           backData = await openlist_api_post('/api/admin/storage/update', {
@@ -145,7 +145,7 @@ async function createStorage(
         }
 
         if (backData.code !== 200) {
-          Message.error(backData.message || '操作失败')
+          Message.error(backData.message || t('error_operation_failed'))
           return false
         }
 
@@ -154,12 +154,12 @@ async function createStorage(
       }
 
       default:
-        Message.error('不支持的存储框架: ' + storageInfo.framework)
+        Message.error(t('error_unsupported_framework') + ': ' + storageInfo.framework)
         return false
     }
   } catch (error) {
     logger.error('Storage operation failed', error as Error, 'StorageCreate')
-    Message.error('存储操作失败，请检查网络连接')
+    Message.error(t('error_storage_network_failure'))
     return false
   }
 }

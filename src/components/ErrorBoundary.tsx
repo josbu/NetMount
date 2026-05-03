@@ -17,6 +17,7 @@
  */
 
 import { Component, ErrorInfo, ReactNode, JSX } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button, Card, Result, Space, Typography } from '@arco-design/web-react'
 import { IconRefresh, IconBug } from '@arco-design/web-react/icon'
 import { logger } from '../services/LoggerService'
@@ -54,6 +55,7 @@ interface DefaultErrorFallbackProps {
 }
 
 function DefaultErrorFallback({ error, onReset }: DefaultErrorFallbackProps): JSX.Element {
+  const { t } = useTranslation()
   return (
     <div
       style={{
@@ -70,8 +72,8 @@ function DefaultErrorFallback({ error, onReset }: DefaultErrorFallbackProps): JS
         <Result
           status="error"
           icon={<IconBug style={{ fontSize: '3rem', color: 'var(--color-danger)' }} />}
-          title="出现错误"
-          subTitle="应用遇到了问题，但别担心，数据是安全的"
+          title={t('error_boundary_title')}
+          subTitle={t('error_boundary_subtitle')}
         >
           <Space direction="vertical" style={{ width: '100%' }}>
             <div
@@ -94,7 +96,7 @@ function DefaultErrorFallback({ error, onReset }: DefaultErrorFallbackProps): JS
             </div>
             <Space style={{ justifyContent: 'center', width: '100%', marginTop: '1rem' }}>
               <Button type="primary" icon={<IconRefresh />} onClick={onReset}>
-                重新加载
+                {t('reload')}
               </Button>
             </Space>
           </Space>
