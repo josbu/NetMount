@@ -1,30 +1,11 @@
 import { CSSProperties, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Button,
-  Form,
-  FormInstance,
-  Grid,
-  Input,
-  InputNumber,
-  Select,
-  Switch,
-  Tooltip,
-} from '@arco-design/web-react'
-import { rcloneInfo } from '../../services/rclone'
-import { FilterType, StorageParamItemType } from '../../type/controller/storage/info'
+import { Form, FormInstance } from '@arco-design/web-react'
+import { StorageParamItemType } from '../../type/controller/storage/info'
 import { ParametersType } from '../../type/defaults'
-import { t } from 'i18next'
-import { IconQuestionCircle } from '@arco-design/web-react/icon'
 import { getProperties } from '../../utils'
-import {
-  convertStoragePath,
-  filterHideStorage,
-  formatPathRclone,
-} from '../../services/storage/StorageManager'
-import { openlistInfo } from '../../services/openlist'
-const Row = Grid.Row
-const Col = Grid.Col
+import { InputFormItemContent_module, filter } from './InputFormItemContent'
+
 const FormItem = Form.Item
 
 function paramsType2FormItems(
@@ -57,7 +38,6 @@ function paramsType2FormItems(
       default: item.value,
       advanced: isAdvanced,
       isPassword: false,
-      //mark: []
     }
     switch (valueType) {
       case 'boolean':
@@ -92,162 +72,6 @@ function paramsType2FormItems(
   })
 
   return formItems
-}
-
-//应用过滤器
-function filter(filters: FilterType[], formValuesResult: ParametersType) {
-  if (filters.length == 0) return undefined
-  for (const filter of filters) {
-    const value = formValuesResult[filter.name]
-    if (typeof value === 'string' && value.includes(String(filter.value))) {
-      return filter.state
-    }
-    if (Array.isArray(value) && value.includes(filter.value)) {
-      //console.log('匹配到:', formValuesResult[filter.name], filter.value, filter.state);
-
-      return filter.state
-    }
-  }
-  //console.log('未找到:', formValuesResult.provider, filters);
-  return false
-}
-
-function StorageAndPathInputer({
-  value,
-  onChange,
-}: {
-  value?: string
-  onChange?(value: string): void
-}) {
-  if (value == undefined) value = ''
-  if (value.includes(openlistInfo.markInRclone)) {
-    const tempPath = formatPathRclone(value.substring(value.indexOf(':') + 1))
-    if (tempPath.includes('/')) {
-      value = tempPath.replace('/', ':')
-    } else {
-      value = tempPath + ':'
-    }
-  }
-
-  const separatorIndex = value.indexOf(':')
-  let storageName = value.substring(0, separatorIndex)
-  let path = formatPathRclone(value.substring(separatorIndex + 1))
-
-  /*const formatPath = (path: string) => {
-            path = path.replace(/\\/g, '/');
-            path = path.replace(/\/+/g, '/');
-    
-            if (path.substring(0, 1) != '/') {
-                path = '/' + path;
-            }
-    
-            return path
-        } */
-
-  const change = () => {
-    storageName && onChange && onChange(convertStoragePath(storageName, path)!)
-  }
-  return (
-    <>
-      <Row>
-        <Col flex={'7rem'}>
-          <Select
-            value={storageName}
-            placeholder={t('please_select')}
-            onChange={value => {
-              storageName = value
-              change()
-            }}
-          >
-            {filterHideStorage(rcloneInfo.storageList).map(item => (
-              <Select.Option key={item.name} value={item.name}>
-                {item.name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Col>
-        <Col flex={'auto'}>
-          <Input
-            value={'/' + path}
-            onChange={value => {
-              path = formatPathRclone(value)
-              change()
-            }}
-            disabled={!storageName}
-          />
-        </Col>
-        <Col flex={'2rem'}>
-          <Tooltip content={t('explain_for_task_path_format')}>
-            <Button icon={<IconQuestionCircle />} />
-          </Tooltip>
-        </Col>
-      </Row>
-    </>
-  )
-}
-
-function InputFormItemContent_module({
-  data,
-  formValuesResult,
-  isEditMode,
-  framework,
-}: {
-  data: StorageParamItemType
-  formValuesResult?: ParametersType
-  isEditMode?: boolean
-  framework?: 'rclone' | 'openlist'
-}) {
-  const { t } = useTranslation()
-
-  let content: JSX.Element
-  switch (data.type) {
-    case 'boolean':
-      content = <Switch /* defaultChecked={data.default} */ />
-      break
-    case 'number':
-      content = <InputNumber mode="button" /* defaultValue={data.default}  */ />
-      break
-    default: //case 'string':
-      if (data.mark) {
-        //特殊的输入器
-        if (data.mark.includes('StorageAndPathInputer')) {
-          //存储和路径输入器
-          content = <StorageAndPathInputer />
-          break
-        }
-      }
-
-      if (data.select) {
-        //选择器
-        const selectContent: JSX.Element[] = []
-
-        for (const item of data.select) {
-          //过滤
-          const filterState =
-            formValuesResult && item.filters ? filter(item.filters, formValuesResult) : true
-
-          if (filterState)
-            selectContent.push(
-              <Select.Option value={item.value} key={item.value}>
-                {t(item.label)}
-              </Select.Option>
-            )
-        }
-
-        content = <Select placeholder={t('please_select')}>{selectContent}</Select>
-      } else if (data.isPassword) {
-        //密码 - 编辑模式下显示提示（仅rclone存储）
-        const placeholderText = isEditMode && framework === 'rclone'
-          ? t('password_obscured_hint')
-          : t('please_input')
-        content = <Input.Password placeholder={placeholderText} />
-      } else {
-        content = <Input placeholder={t('please_input')} />
-      }
-      break
-  }
-
-  return content
 }
 
 function InputForm_module({

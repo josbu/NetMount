@@ -6,23 +6,18 @@
  */
 
 import { logger } from '../../services/LoggerService'
+import {
+  loadFromStorage,
+  saveToStorage,
+  removeFromStorage,
+  clearStorage,
+} from './cachePersistence'
 
 /**
  * 缓存条目
  */
-interface CacheEntry<T> {
+export interface CacheEntry<T> {
   value: T
-  expiresAt: number
-  createdAt: number
-  lastAccessedAt: number
-  hitCount: number
-}
-
-/**
- * 序列化后的缓存条目（用于localStorage）
- */
-interface SerializedCacheEntry {
-  value: string // JSON字符串
   expiresAt: number
   createdAt: number
   lastAccessedAt: number
@@ -64,112 +59,14 @@ export class CacheManager {
 
   constructor() {
     // 从localStorage加载缓存
-    this.loadFromStorage()
+    if (this.config.enablePersistence) {
+      loadFromStorage(this.cache, this.config.persistenceKey)
+    }
     
     // 定期清理过期缓存
     this.cleanupInterval = setInterval(() => {
       this.cleanup()
     }, 60000) // 每分钟清理一次
-  }
-
-  /**
-   * 从localStorage加载缓存数据
-   */
-  private loadFromStorage(): void {
-    if (typeof localStorage === 'undefined' || !this.config.enablePersistence) {
-      return
-    }
-
-    try {
-      const keysToRemove: string[] = []
-      
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key?.startsWith(this.config.persistenceKey)) {
-          const cacheKey = key.substring(this.config.persistenceKey.length)
-          try {
-            const serialized = localStorage.getItem(key)
-            if (serialized) {
-              const entry: SerializedCacheEntry = JSON.parse(serialized)
-              
-              // 只加载未过期的缓存
-              if (Date.now() < entry.expiresAt) {
-                this.cache.set(cacheKey, {
-                  value: JSON.parse(entry.value),
-                  expiresAt: entry.expiresAt,
-                  createdAt: entry.createdAt,
-                  lastAccessedAt: entry.lastAccessedAt,
-                  hitCount: entry.hitCount,
-                })
-              } else {
-                // 标记过期缓存以便删除
-                keysToRemove.push(key)
-              }
-            }
-          } catch (parseError) {
-            this.cacheLogger.warn('Failed to parse cached entry', { key: cacheKey, error: parseError })
-            keysToRemove.push(key)
-          }
-        }
-      }
-
-      // 删除过期或损坏的缓存
-      keysToRemove.forEach(key => {
-        try {
-          localStorage.removeItem(key)
-        } catch {
-          // 忽略删除错误
-        }
-      })
-
-      if (this.cache.size > 0) {
-        this.cacheLogger.info('Loaded cache from localStorage', { count: this.cache.size })
-      }
-    } catch (error) {
-      this.cacheLogger.error('Failed to load cache from localStorage', error as Error)
-    }
-  }
-
-  /**
-   * 保存缓存条目到localStorage
-   */
-  private saveToStorage(key: string, entry: CacheEntry<unknown>): void {
-    if (typeof localStorage === 'undefined' || !this.config.enablePersistence) {
-      return
-    }
-
-    try {
-      const serialized: SerializedCacheEntry = {
-        value: JSON.stringify(entry.value),
-        expiresAt: entry.expiresAt,
-        createdAt: entry.createdAt,
-        lastAccessedAt: entry.lastAccessedAt,
-        hitCount: entry.hitCount,
-      }
-      localStorage.setItem(this.config.persistenceKey + key, JSON.stringify(serialized))
-    } catch (error) {
-      // localStorage可能已满或不支持，记录但不阻断
-      if (error instanceof Error && error.name === 'QuotaExceededError') {
-        this.cacheLogger.warn('localStorage quota exceeded, disabling persistence for this entry', { key })
-      } else {
-        this.cacheLogger.debug('Failed to save cache to localStorage', { key, error })
-      }
-    }
-  }
-
-  /**
-   * 从localStorage删除缓存条目
-   */
-  private removeFromStorage(key: string): void {
-    if (typeof localStorage === 'undefined' || !this.config.enablePersistence) {
-      return
-    }
-
-    try {
-      localStorage.removeItem(this.config.persistenceKey + key)
-    } catch {
-      // 忽略删除错误
-    }
   }
 
   /**
@@ -231,7 +128,9 @@ export class CacheManager {
     this.stats.sets++
     
     // 持久化到localStorage
-    this.saveToStorage(key, entry)
+    if (this.config.enablePersistence) {
+      saveToStorage(key, entry, this.config.persistenceKey)
+    }
   }
 
   /**
@@ -242,7 +141,9 @@ export class CacheManager {
     if (result) {
       this.stats.deletes++
       // 从localStorage删除
-      this.removeFromStorage(key)
+      if (this.config.enablePersistence) {
+        removeFromStorage(key, this.config.persistenceKey)
+      }
     }
     return result
   }
@@ -252,21 +153,8 @@ export class CacheManager {
    */
   clear(): void {
     // 清除localStorage中的缓存
-    if (typeof localStorage !== 'undefined' && this.config.enablePersistence) {
-      const keysToRemove: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key?.startsWith(this.config.persistenceKey)) {
-          keysToRemove.push(key)
-        }
-      }
-      keysToRemove.forEach(key => {
-        try {
-          localStorage.removeItem(key)
-        } catch {
-          // 忽略删除错误
-        }
-      })
+    if (this.config.enablePersistence) {
+      clearStorage(this.config.persistenceKey)
     }
     
     this.cache.clear()
@@ -340,7 +228,9 @@ export class CacheManager {
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiresAt) {
         this.cache.delete(key)
-        this.removeFromStorage(key)
+        if (this.config.enablePersistence) {
+          removeFromStorage(key, this.config.persistenceKey)
+        }
         cleaned++
       }
     }
@@ -369,7 +259,9 @@ export class CacheManager {
 
     if (oldestKey) {
       this.cache.delete(oldestKey)
-      this.removeFromStorage(oldestKey)
+      if (this.config.enablePersistence) {
+        removeFromStorage(oldestKey, this.config.persistenceKey)
+      }
       this.stats.deletes++
       this.cacheLogger.debug('Evicted cache entry (LRU)', { key: oldestKey })
     }

@@ -10,15 +10,9 @@ import { RepositoryError, ErrorCode } from '../interfaces/IRepository'
 import { logger } from '../../services/LoggerService'
 import { nmConfig, saveNmConfig } from '../../services/ConfigService'
 import { rcloneInfo } from '../../services/rclone'
-import { useMountStore } from '../../stores/mountStore'
-import { hooks } from '../../services/hook'
-import { rclone_api_post } from '../../utils/rclone/request'
-import { fs_exist_dir, fs_make_dir } from '../../utils'
-import { convertStoragePath } from '../../services/storage/StorageManager'
 import type { MountEntity, MountStatus, VfsOptions, MountOptions } from '../../type/mount/mount'
 import type { MountListItem } from '../../type/config'
-import type { MountList } from '../../type/rclone/rcloneInfo'
-import { isMountListResponse } from '../../type/rclone/api'
+import { generateMountId, parseMountId, normalizeMountPath, performMount, performUnmount, refreshMountList, isMounted, getMountConfig } from './mountHelpers'
 
 const mountLogger = logger.withContext('MountRepository')
 
@@ -30,42 +24,6 @@ export class MountRepository extends BaseRepository<MountEntity> {
     super({ enableCache: false })
   }
 
-  /**
-   * 生成URL-safe的挂载点ID
-   */
-  private generateMountId(storageName: string, mountPath: string): string {
-    const encodedName = encodeURIComponent(storageName)
-    const encodedPath = encodeURIComponent(mountPath)
-    return `${encodedName}_${encodedPath}`
-  }
-
-  /**
-   * 从ID解析storageName和mountPath
-   */
-  private parseMountId(id: string): { storageName: string; mountPath: string } | null {
-    const separatorIndex = id.indexOf('_')
-    if (separatorIndex === -1) return null
-    try {
-      const storageName = decodeURIComponent(id.substring(0, separatorIndex))
-      const mountPath = decodeURIComponent(id.substring(separatorIndex + 1))
-      return { storageName, mountPath }
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * 路径标准化
-   */
-  private normalizeMountPath(path: string): string {
-    if (!path) return path
-    let normalized = path.replace(/\\/g, '/')
-    if (normalized.length > 2 && normalized.endsWith('/') && !normalized.endsWith(':/')) {
-      normalized = normalized.slice(0, -1)
-    }
-    return normalized
-  }
-
   // ==========================================
   // CRUD 方法
   // ==========================================
@@ -75,7 +33,7 @@ export class MountRepository extends BaseRepository<MountEntity> {
     await this.refreshMountList(true)
     
     return rcloneInfo.mountList.map(mount => ({
-      id: this.generateMountId(mount.storageName, mount.mountPath),
+      id: generateMountId(mount.storageName, mount.mountPath),
       storageName: mount.storageName,
       mountPath: mount.mountPath,
       status: 'mounted' as MountStatus,
@@ -84,7 +42,7 @@ export class MountRepository extends BaseRepository<MountEntity> {
   }
 
   async getById(id: string): Promise<MountEntity | null> {
-    const parsed = this.parseMountId(id)
+    const parsed = parseMountId(id)
     if (parsed) {
       const mounts = await this.getAll()
       return mounts.find(m => 
@@ -105,9 +63,9 @@ export class MountRepository extends BaseRepository<MountEntity> {
     }
 
     // 检查是否已存在配置
-    const normalizedPath = this.normalizeMountPath(entity.mountPath)
+    const normalizedPath = normalizeMountPath(entity.mountPath)
     const existing = nmConfig.mount.lists.find(
-      item => this.normalizeMountPath(item.mountPath) === normalizedPath
+      item => normalizeMountPath(item.mountPath) === normalizedPath
     )
     if (existing) {
       throw new RepositoryError(
@@ -130,10 +88,10 @@ export class MountRepository extends BaseRepository<MountEntity> {
     await saveNmConfig()
 
     // 执行挂载
-    await this.performMount(mountInfo)
+    await performMount(mountInfo)
 
     const mount: MountEntity = {
-      id: this.generateMountId(entity.storageName, entity.mountPath),
+      id: generateMountId(entity.storageName, entity.mountPath),
       storageName: entity.storageName,
       mountPath: entity.mountPath,
       parameters: mountInfo.parameters,
@@ -154,9 +112,9 @@ export class MountRepository extends BaseRepository<MountEntity> {
     }
 
     // 找到配置索引
-    const normalizedPath = this.normalizeMountPath(oldMount.mountPath)
+    const normalizedPath = normalizeMountPath(oldMount.mountPath)
     const configIndex = nmConfig.mount.lists.findIndex(
-      item => this.normalizeMountPath(item.mountPath) === normalizedPath
+      item => normalizeMountPath(item.mountPath) === normalizedPath
     )
     if (configIndex === -1) {
       throw new RepositoryError('Mount configuration not found', ErrorCode.NOT_FOUND, 'MountRepository')
@@ -179,12 +137,12 @@ export class MountRepository extends BaseRepository<MountEntity> {
 
     // 如果关键路径变化，需要重新挂载
     if (newConfig.mountPath !== oldMount.mountPath || newConfig.storageName !== oldMount.storageName) {
-      await this.performUnmount(oldMount.mountPath)
-      await this.performMount(newConfig)
+      await performUnmount(oldMount.mountPath)
+      await performMount(newConfig)
     }
 
     const newMount: MountEntity = {
-      id: this.generateMountId(newConfig.storageName, newConfig.mountPath),
+      id: generateMountId(newConfig.storageName, newConfig.mountPath),
       storageName: newConfig.storageName,
       mountPath: newConfig.mountPath,
       parameters: newConfig.parameters,
@@ -203,12 +161,12 @@ export class MountRepository extends BaseRepository<MountEntity> {
     if (!oldMount) return false
 
     // 先卸载
-    await this.performUnmount(oldMount.mountPath)
+    await performUnmount(oldMount.mountPath)
 
     // 删除配置
-    const normalizedPath = this.normalizeMountPath(oldMount.mountPath)
+    const normalizedPath = normalizeMountPath(oldMount.mountPath)
     nmConfig.mount.lists = nmConfig.mount.lists.filter(
-      item => this.normalizeMountPath(item.mountPath) !== normalizedPath
+      item => normalizeMountPath(item.mountPath) !== normalizedPath
     )
     await saveNmConfig()
 
@@ -230,76 +188,21 @@ export class MountRepository extends BaseRepository<MountEntity> {
    * 刷新挂载列表（从 rclone 获取）
    */
   async refreshMountList(noRefreshUI?: boolean): Promise<void> {
-    const response = await rclone_api_post('/mount/listmounts')
-    
-    if (!response || !isMountListResponse(response)) {
-      mountLogger.warn('Invalid mount list response format', { response })
-      rcloneInfo.mountList = []
-      useMountStore.getState().setMountList([])
-      !noRefreshUI && hooks.upMount()
-      return
-    }
-    
-    const mountPoints = response.mountPoints
-    rcloneInfo.mountList = []
-    const newMountList: MountList[] = []
-
-    mountPoints.forEach((item) => {
-      const mountItem: MountList = {
-        storageName: item.fs,
-        mountPath: item.mountPoint,
-        mountedTime: new Date(item.mountedOn),
-      }
-      rcloneInfo.mountList.push(mountItem)
-      newMountList.push(mountItem)
-    })
-    
-    useMountStore.getState().setMountList(newMountList)
-    !noRefreshUI && hooks.upMount()
+    return refreshMountList(noRefreshUI)
   }
 
   /**
    * 检查挂载点是否已挂载
    */
   async isMounted(mountPath: string): Promise<boolean> {
-    await this.refreshMountList(true)
-    return rcloneInfo.mountList.findIndex(item => item.mountPath === mountPath) !== -1
+    return isMounted(mountPath)
   }
 
   /**
    * 获取挂载配置
    */
   getMountConfig(mountPath: string): MountListItem | undefined {
-    const normalized = this.normalizeMountPath(mountPath)
-    return nmConfig.mount.lists.find(item => this.normalizeMountPath(item.mountPath) === normalized)
-  }
-
-  /**
-   * 执行挂载操作
-   */
-  private async performMount(mountInfo: MountListItem): Promise<void> {
-    // 非 Windows 系统需要创建目录
-    if (!rcloneInfo.version.os.toLowerCase().includes('windows')) {
-      if (!(await fs_exist_dir(mountInfo.mountPath))) {
-        await fs_make_dir(mountInfo.mountPath)
-      }
-    }
-
-    await rclone_api_post('/mount/mount', {
-      fs: convertStoragePath(mountInfo.storageName) || mountInfo.storageName,
-      mountPoint: mountInfo.mountPath,
-      ...mountInfo.parameters,
-    })
-
-    await this.refreshMountList()
-  }
-
-  /**
-   * 执行卸载操作
-   */
-  private async performUnmount(mountPath: string): Promise<void> {
-    await rclone_api_post('/mount/unmount', { mountPoint: mountPath })
-    await this.refreshMountList()
+    return getMountConfig(mountPath)
   }
 
   // ==========================================
@@ -315,8 +218,8 @@ export class MountRepository extends BaseRepository<MountEntity> {
     parameters: { vfsOpt: VfsOptions; mountOpt: MountOptions },
     autoMount?: boolean
   ): Promise<boolean> {
-    const normalizedPath = this.normalizeMountPath(mountPath)
-    if (nmConfig.mount.lists.some(item => this.normalizeMountPath(item.mountPath) === normalizedPath)) {
+    const normalizedPath = normalizeMountPath(mountPath)
+    if (nmConfig.mount.lists.some(item => normalizeMountPath(item.mountPath) === normalizedPath)) {
       return false
     }
 
@@ -337,12 +240,12 @@ export class MountRepository extends BaseRepository<MountEntity> {
    */
   async deleteMountConfig(mountPath: string): Promise<void> {
     if (await this.isMounted(mountPath)) {
-      await this.performUnmount(mountPath)
+      await performUnmount(mountPath)
     }
 
-    const normalizedPath = this.normalizeMountPath(mountPath)
+    const normalizedPath = normalizeMountPath(mountPath)
     nmConfig.mount.lists = nmConfig.mount.lists.filter(
-      item => this.normalizeMountPath(item.mountPath) !== normalizedPath
+      item => normalizeMountPath(item.mountPath) !== normalizedPath
     )
     await saveNmConfig()
     await this.refreshMountList()
@@ -352,14 +255,14 @@ export class MountRepository extends BaseRepository<MountEntity> {
    * 挂载存储
    */
   async mountStorage(mountInfo: MountListItem): Promise<void> {
-    await this.performMount(mountInfo)
+    await performMount(mountInfo)
   }
 
   /**
    * 卸载存储
    */
   async unmountStorage(mountPath: string): Promise<void> {
-    await this.performUnmount(mountPath)
+    await performUnmount(mountPath)
   }
 
   /**
@@ -367,11 +270,11 @@ export class MountRepository extends BaseRepository<MountEntity> {
    */
   async editMountConfig(mountInfo: MountListItem, oldMountPath?: string): Promise<void> {
     const searchPath = oldMountPath || mountInfo.mountPath
-    const normalizedSearch = this.normalizeMountPath(searchPath)
+    const normalizedSearch = normalizeMountPath(searchPath)
     
     let found = false
     for (let i = 0; i < nmConfig.mount.lists.length; i++) {
-      if (this.normalizeMountPath(nmConfig.mount.lists[i]!.mountPath) === normalizedSearch) {
+      if (normalizeMountPath(nmConfig.mount.lists[i]!.mountPath) === normalizedSearch) {
         nmConfig.mount.lists[i] = mountInfo
         found = true
         break

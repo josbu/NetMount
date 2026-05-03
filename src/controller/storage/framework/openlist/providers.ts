@@ -1,106 +1,13 @@
 import { StorageInfoType, StorageParamItemType } from '../../../../type/controller/storage/info'
 import { openlist_api_get } from '../../../../utils/openlist/request'
 import { logger } from '../../../../services/LoggerService'
-
-function normalizeStorageId(raw: string): string {
-  return String(raw ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-}
-
-interface DriverInfo {
-  name?: string
-  config?: {
-    name?: string
-  }
-  common?: DriverOption[]
-  additional?: DriverOption[]
-}
-
-interface DriverOption {
-  name: string
-  help?: string
-  type?: string
-  required?: boolean
-  default?: unknown
-  options?: string
-}
-
-function detectDriverListStructure(data: unknown): 'object-map' | 'array' | 'unknown' {
-  if (!data) return 'unknown'
-
-  if (Array.isArray(data)) {
-    return 'array'
-  }
-
-  if (typeof data === 'object' && Object.keys(data).length > 0) {
-    const record = data as Record<string, unknown>
-    const firstKey = Object.keys(record)[0]
-    const firstValue = record[firstKey!] as Record<string, unknown> | undefined
-    if (firstValue && (firstValue.config || firstValue.common || firstValue.additional)) {
-      return 'object-map'
-    }
-  }
-
-  return 'unknown'
-}
-
-function normalizeDriverList(data: unknown): Record<string, DriverInfo> {
-  const structure = detectDriverListStructure(data)
-
-  if (structure === 'object-map') {
-    return data as Record<string, DriverInfo>
-  }
-
-  if (structure === 'array') {
-    const result: Record<string, DriverInfo> = {}
-    ;(data as DriverInfo[]).forEach(driver => {
-      const key = driver.name || driver.config?.name || 'unknown'
-      result[key] = driver
-    })
-    return result
-  }
-
-    logger.error('Unknown driver list structure:', undefined, 'OpenListProviders', { data })
-    return {}
-}
-
-function safeGetDriverConfig(provider: DriverInfo, key: string): { name?: string } {
-  const defaultConfig = { name: key }
-
-  if (!provider) return defaultConfig
-
-  if (!provider.config) {
-    logger.warn(`Driver ${key} missing config field, using fallback`, 'OpenListProviders')
-    return { name: key }
-  }
-
-  return {
-    name: provider.config.name || key,
-  }
-}
-
-function safeGetDriverOptions(
-  provider: DriverInfo,
-  field: 'common' | 'additional'
-): DriverOption[] {
-  if (!provider) return []
-
-  const options = provider[field]
-
-  if (!options) {
-    logger.warn(`Driver ${provider.name || 'unknown'} missing ${field} field`, 'OpenListProviders')
-    return []
-  }
-
-  if (!Array.isArray(options)) {
-    logger.warn(`Driver ${provider.name || 'unknown'} ${field} is not an array`, 'OpenListProviders')
-    return []
-  }
-
-  return options
-}
+import {
+  normalizeStorageId,
+  normalizeDriverList,
+  safeGetDriverConfig,
+  safeGetDriverOptions,
+  DriverOption,
+} from './providerHelpers'
 
 async function updateOpenlistStorageInfoList() {
   try {
